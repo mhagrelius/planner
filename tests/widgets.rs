@@ -34,6 +34,7 @@ use planner::ui::sidebar::{builtin_views, project_views, Sidebar};
 use planner::ui::task_list::TaskList;
 use planner::ui::task_object::TaskObject;
 use planner::ui::task_row::TaskRow;
+use planner::ui::{PlannerApplication, PlannerWindow};
 
 /// Thursday, 30 July 2026.
 fn today() -> NaiveDate {
@@ -1035,6 +1036,41 @@ fn widgets() {
             );
         }
     });
+
+    runner.case(
+        "a new window is filled in before anything is edited",
+        || {
+            // The window opened empty and only filled in once some later edit
+            // called `refresh` again: it refreshed from `constructed`, where
+            // `GtkWindow:application` is not set yet, so it found no store and
+            // did nothing. Anything that reads the application has to run after
+            // construction returns.
+            let dir = tempfile::TempDir::new().expect("a temp dir");
+            // Redirect the store off the real one. `PlannerApplication::startup`
+            // opens the default path, and a test must not open the file the
+            // developer keeps their own tasks in.
+            std::env::set_var("XDG_DATA_HOME", dir.path());
+
+            let seeded = dir.path().join("planner").join("planner.json");
+            std::fs::create_dir_all(seeded.parent().expect("a parent")).expect("the data dir");
+            let (mut store, _) = Store::open_at(&seeded);
+            store.add_project(Project::new("Work", Color::Blue));
+            store.save().expect("seeding the store");
+
+            // Its own ID: the real one would make this process a remote for a
+            // running Planner and drive the live app instead of itself.
+            let app = PlannerApplication::with_application_id("us.hagreli.Planner.WindowTest");
+            app.register(gtk::gio::Cancellable::NONE)
+                .expect("registering emits startup, which loads the store");
+
+            let window = PlannerWindow::new(&app);
+            assert_eq!(
+                window.selected_view_id().as_deref(),
+                Some("today"),
+                "a freshly built window shows nothing until something is edited"
+            );
+        },
+    );
 
     assert!(
         runner.failures.is_empty(),

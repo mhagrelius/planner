@@ -66,8 +66,11 @@ mod imp {
             obj.set_title(Some("Planner"));
             obj.build();
             obj.install_actions();
-            obj.refresh();
-            obj.report_load_outcome();
+            // Nothing here may read the application. `GtkWindow:application`
+            // is a plain property rather than a construct one, so GObject
+            // sets it *after* `constructed` returns — anything that reaches
+            // for it from here finds `None` and quietly does nothing. The
+            // first fill lives in `new`, which has the application in hand.
         }
     }
 
@@ -110,7 +113,14 @@ const FILTER_HINT: &str = "Combine with & | ! ( ) — for example \
 
 impl PlannerWindow {
     pub fn new(app: &PlannerApplication) -> Self {
-        glib::Object::builder().property("application", app).build()
+        let window: Self = glib::Object::builder().property("application", app).build();
+        // By here the application property is set, so these two see a store.
+        // Left in `constructed` they saw nothing: the window opened empty and
+        // stayed that way until some edit happened to call `refresh` again,
+        // and a store recovered from a backup was never reported at all.
+        window.refresh();
+        window.report_load_outcome();
+        window
     }
 
     fn planner_application(&self) -> Option<PlannerApplication> {
@@ -1625,6 +1635,16 @@ impl PlannerWindow {
     /// A banner rather than a toast, and it stays up until the save succeeds:
     /// this is an ongoing condition, and a toast about lost work is exactly
     /// the toast you miss because you are typing.
+    /// The view the sidebar is showing, for tests.
+    pub fn selected_view_id(&self) -> Option<String> {
+        self.imp()
+            .sidebar
+            .borrow()
+            .as_ref()
+            .and_then(|sidebar| sidebar.selected_view())
+            .map(|view| view.id)
+    }
+
     pub fn set_save_error(&self, error: Option<String>) {
         let Some(banner) = self.imp().banner.borrow().clone() else {
             return;
