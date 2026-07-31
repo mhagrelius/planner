@@ -1,0 +1,59 @@
+# Flatpak manifest for Planner.
+#
+# Build:  packaging/build-flatpak.sh
+
+id: us.hagreli.Planner
+
+# GNOME 50 is the first runtime carrying libadwaita 1.9, which this is
+# compiled against (AdwSidebar-era API levels, AdwToggleGroup, AdwWrapBox),
+# and GTK 4.22.
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+
+command: planner
+
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+
+  # Reminders are desktop notifications, which need the portal.
+  - --talk-name=org.freedesktop.Notifications
+
+  # Deliberately absent:
+  #   --filesystem=*    tasks live in the app's own XDG data dir
+  #   --share=network   nothing here talks to the network. There is no sync,
+  #                     and if one is ever added this line is where the
+  #                     decision becomes visible.
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/planner/cargo
+
+modules:
+  - name: planner
+    buildsystem: simple
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo --offline build --release --locked
+      - install -Dm755 target/release/planner /app/bin/planner
+      - install -Dm644 data/us.hagreli.Planner.desktop
+          /app/share/applications/us.hagreli.Planner.desktop
+      - install -Dm644 data/us.hagreli.Planner.metainfo.xml
+          /app/share/metainfo/us.hagreli.Planner.metainfo.xml
+      - install -Dm644 data/icons/hicolor/scalable/apps/us.hagreli.Planner.svg
+          /app/share/icons/hicolor/scalable/apps/us.hagreli.Planner.svg
+      - install -Dm644 data/icons/hicolor/symbolic/apps/us.hagreli.Planner-symbolic.svg
+          /app/share/icons/hicolor/symbolic/apps/us.hagreli.Planner-symbolic.svg
+    sources:
+      - type: dir
+        path: ../..
+      # Generated from Cargo.lock by build-flatpak.sh. Flathub builds with the
+      # network off, so every crate has to arrive here with a checksum.
+      - cargo-sources.json

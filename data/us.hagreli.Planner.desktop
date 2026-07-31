@@ -1,0 +1,18 @@
+[Desktop Entry]
+Name=Planner
+GenericName=Task Planner
+Comment=Keep track of what needs doing
+Keywords=task;todo;planner;checklist;reminder;
+Exec=planner
+Icon=us.hagreli.Planner
+Terminal=false
+Type=Application
+Categories=GTK;GNOME;Office;ProjectManagement;
+StartupNotify=true
+StartupWMClass=us.hagreli.Planner
+DBusActivatable=true
+Actions=new-task;
+
+[Desktop Action new-task]
+Name=New Task
+Exec=planner --new-task

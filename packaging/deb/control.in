@@ -1,0 +1,15 @@
+Package: planner
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: @ARCH@
+Depends: @DEPENDS@
+Maintainer: Matthew Hagrelius <matthew@hagreli.us>
+Homepage: https://github.com/hagrelius/planner
+Description: Task planner for the GNOME desktop
+ Planner keeps track of what needs doing, on your own machine, in one
+ plain JSON file you can read and back up.
+ .
+ Tasks are typed on one line: dates in plain English, repeats, projects,
+ sections, labels, priorities and reminders. Views are filter queries, so
+ the built-in ones and your own saved filters work the same way.

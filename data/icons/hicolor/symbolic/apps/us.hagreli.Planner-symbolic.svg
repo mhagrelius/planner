@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="currentColor">
+    <path d="M4 1a1 1 0 0 0-1 1v1H2.5A1.5 1.5 0 0 0 1 4.5v9A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 13.5 3H13V2a1 1 0 0 0-2 0v1H5V2a1 1 0 0 0-1-1zM2.5 5h11a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-8a.5.5 0 0 1 .5-.5z"/>
+    <!-- Tick and rules share the inner box (x 2-14, y 5-14): the tick spans
+         x 2.5-8.5 and the rules x 9.5-13, and the three are centred together
+         on y 9.75. -->
+    <path d="M3.25 9.75l1.5 1.5 3-3" fill="none" stroke="currentColor"
+          stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="9.5" y="7.5" width="3.5" height="1.5" rx=".75"/>
+    <rect x="9.5" y="10.5" width="3.5" height="1.5" rx=".75"/>
+  </g>
+</svg>

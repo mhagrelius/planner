@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>us.hagreli.Planner</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Planner</name>
+  <summary>Keep track of what needs doing</summary>
+
+  <description>
+    <p>
+      A task planner for the GNOME desktop. Everything is kept on your own
+      machine, in one plain JSON file you can read, grep and back up.
+    </p>
+    <p>Type a whole task on one line:</p>
+    <ul>
+      <li>Dates in plain English — <code>friday 9am</code>, <code>in 3 days</code>, <code>end of month</code></li>
+      <li>Repeats, including <code>every! 10 days</code> to count from when you last finished it</li>
+      <li><code>#project</code>, <code>/section</code>, <code>@label</code>, <code>p1</code>–<code>p4</code> and <code>!30m</code> reminders</li>
+    </ul>
+    <p>And find anything again:</p>
+    <ul>
+      <li>Built-in views for Inbox, Today, Upcoming, Pinned and Completed</li>
+      <li>Saved filters written as queries — <code>p1 &amp; due before: next week</code></li>
+      <li>Projects with sections, shown as a list or as a board</li>
+      <li>Quick Find across tasks, projects and labels</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">us.hagreli.Planner.desktop</launchable>
+
+  <categories>
+    <category>Office</category>
+    <category>ProjectManagement</category>
+  </categories>
+
+  <keywords>
+    <keyword>task</keyword>
+    <keyword>todo</keyword>
+    <keyword>planner</keyword>
+    <keyword>reminder</keyword>
+  </keywords>
+
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-07-31">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+
+  <developer id="us.hagreli">
+    <name>Matthew Hagrelius</name>
+  </developer>
+
+  <url type="homepage">https://github.com/hagrelius/planner</url>
+  <url type="bugtracker">https://github.com/hagrelius/planner/issues</url>
+</component>

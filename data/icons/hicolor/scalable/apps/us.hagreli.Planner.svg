@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6e8eb"/>
+    </linearGradient>
+    <linearGradient id="band" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#62a0ea"/>
+      <stop offset="1" stop-color="#3584e4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- the sheet -->
+  <rect x="18" y="16" width="92" height="98" rx="12" fill="url(#paper)"/>
+  <rect x="18" y="16" width="92" height="98" rx="12" fill="none"
+        stroke="#c0c5cc" stroke-width="2"/>
+
+  <!-- the header band, with two binder rings above it -->
+  <path d="M18 28a12 12 0 0 1 12-12h68a12 12 0 0 1 12 12v10H18z" fill="url(#band)"/>
+  <rect x="38" y="6" width="8" height="20" rx="4" fill="#5e5c64"/>
+  <rect x="82" y="6" width="8" height="20" rx="4" fill="#5e5c64"/>
+
+  <!-- Three rows on baselines 52, 76 and 100, between the band (38) and the
+       sheet foot (114) with 6px to spare either end. The marks share a column:
+       every box and tick is 16px wide about x=36.5, so the ticked row lines up
+       with the empty ones below it. -->
+  <path d="M30.5 52.5l4 4 8-9" fill="none" stroke="#2ec27e" stroke-width="4.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="52" y="48.5" width="42" height="7" rx="3.5" fill="#c0c5cc"/>
+
+  <rect x="30" y="69.5" width="13" height="13" rx="4" fill="none"
+        stroke="#9a9996" stroke-width="3"/>
+  <rect x="52" y="72.5" width="48" height="7" rx="3.5" fill="#9a9996"/>
+
+  <rect x="30" y="93.5" width="13" height="13" rx="4" fill="none"
+        stroke="#9a9996" stroke-width="3" opacity="0.55"/>
+  <rect x="52" y="96.5" width="32" height="7" rx="3.5" fill="#9a9996" opacity="0.55"/>
+</svg>

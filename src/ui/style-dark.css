@@ -1,0 +1,11 @@
+/* Loaded on top of style.css whenever libadwaita reports a dark scheme, and
+ * taken off again when it does not. Only the rules whose answer actually
+ * changes with the background belong here; everything else stays in the one
+ * stylesheet so there is one place to read. */
+
+/* Lift the priority hues clear of the dark view background. See the priority
+ * section of style.css for why this is one-sided — light needs no adjustment,
+ * and clamping it the other way collapses P2 into P1. */
+:root {
+    --priority-oklab: max(l, 0.8) a b;
+}
