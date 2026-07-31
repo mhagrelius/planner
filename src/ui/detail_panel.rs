@@ -326,6 +326,7 @@ impl DetailPanel {
         properties.add(&schedule);
 
         let (deadline, deadline_picker) = self.build_date_row("Deadline", "alarm-symbolic");
+        deadline_picker.hide_repeat();
         deadline_picker.connect_chosen(glib::clone!(
             #[weak(rename_to = panel)]
             self,

@@ -19,7 +19,7 @@ use gtk::subclass::prelude::*;
 use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
 
 use crate::model::due::Due;
-use crate::model::parse::{parse_date, parse_time};
+use crate::model::parse::{parse_date, parse_recurrence, parse_time};
 use crate::model::recurrence::Recurrence;
 
 mod imp {
@@ -34,10 +34,20 @@ mod imp {
         pub natural: RefCell<Option<gtk::Entry>>,
         pub time: RefCell<Option<gtk::Entry>>,
         pub feedback: RefCell<Option<gtk::Label>>,
+        pub repeat: RefCell<Option<gtk::Entry>>,
+        pub repeat_row: RefCell<Option<gtk::Box>>,
+        pub repeat_feedback: RefCell<Option<gtk::Label>>,
+        /// Cleared by [`hide_repeat`](super::DatePicker::hide_repeat) for the
+        /// deadline picker, which has no repeat to edit.
+        pub repeat_enabled: Cell<bool>,
 
         pub today: Cell<Option<NaiveDate>>,
-        /// The rule the task already had, carried through untouched.
+        /// The rule the task has, as the box was last committed.
         pub recurrence: RefCell<Option<Recurrence>>,
+        /// Whether the task had a date of its own. The calendar always shows
+        /// one, so it cannot answer this, and setting a repeat on a task with
+        /// no date has to pick a first occurrence rather than use today.
+        pub has_date: Cell<bool>,
         pub chosen: RefCell<Option<Callback>>,
         /// Set while the picker writes its own widgets, so the resulting
         /// `day-selected` is not treated as the user choosing a date.
@@ -90,13 +100,24 @@ impl DatePicker {
         self.imp().chosen.replace(Some(Box::new(callback)));
     }
 
+    /// Drop the repeat box. A deadline is a date something is due *by*; it
+    /// does not repeat, and offering the control would imply it could.
+    pub fn hide_repeat(&self) {
+        self.imp().repeat_enabled.set(false);
+        if let Some(row) = self.imp().repeat_row.borrow().as_ref() {
+            row.set_visible(false);
+        }
+        self.set_repeat_feedback("");
+    }
+
     /// Show the picker for a task's current date.
     pub fn load(&self, due: Option<&Due>, today: NaiveDate) {
         let imp = self.imp();
         imp.loading.set(true);
         imp.today.set(Some(today));
-        imp.recurrence
-            .replace(due.and_then(|due| due.recurrence.clone()));
+        let recurrence = due.and_then(|due| due.recurrence.clone());
+        imp.recurrence.replace(recurrence.clone());
+        imp.has_date.set(due.is_some());
 
         let date = due.map(|due| due.date).unwrap_or(today);
         if let Some(calendar) = imp.calendar.borrow().as_ref() {
@@ -117,7 +138,14 @@ impl DatePicker {
         if let Some(entry) = imp.natural.borrow().as_ref() {
             entry.set_text("");
         }
+        // Prefilled with the rule rather than left blank: `describe` writes
+        // the phrase that would have produced it, so the box shows what the
+        // task does and editing it is editing that phrase.
+        if let Some(entry) = imp.repeat.borrow().as_ref() {
+            entry.set_text(&recurrence.map(|rule| rule.describe()).unwrap_or_default());
+        }
         self.set_feedback("");
+        self.set_repeat_feedback("");
         imp.loading.set(false);
     }
 
@@ -212,12 +240,64 @@ impl DatePicker {
         time_row.append(&time);
         body.append(&time_row);
 
+        // --- repeat -----------------------------------------------------
+        // A text box rather than a bank of spinners and toggles, for the
+        // reason `parse::recurrence` gives: `every!` — repeat from when you
+        // finished, not from when it was due — has no obvious widget, and a
+        // control set that cannot express it would be a worse editor than the
+        // syntax it replaced. The phrase already parses, and `describe` writes
+        // it back, so the box round-trips.
+        let repeat_row = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(6)
+            .build();
+        let repeat_label = gtk::Label::new(Some("Repeat"));
+        repeat_label.add_css_class("dimmed");
+        repeat_row.append(&repeat_label);
+        let repeat = gtk::Entry::builder()
+            .placeholder_text("every week, every! 10 days…")
+            .hexpand(true)
+            .build();
+        repeat.connect_activate(glib::clone!(
+            #[weak(rename_to = picker)]
+            self,
+            move |_| picker.commit_repeat()
+        ));
+        repeat.connect_changed(glib::clone!(
+            #[weak(rename_to = picker)]
+            self,
+            move |_| picker.preview_repeat()
+        ));
+        repeat_row.append(&repeat);
+        let never = gtk::Button::builder()
+            .icon_name("edit-clear-symbolic")
+            .tooltip_text("Do not repeat")
+            .css_classes(["flat"])
+            .build();
+        never.connect_clicked(glib::clone!(
+            #[weak(rename_to = picker)]
+            self,
+            move |_| picker.set_repeat(None)
+        ));
+        repeat_row.append(&never);
+        body.append(&repeat_row);
+        imp.repeat_enabled.set(true);
+
+        let repeat_feedback = gtk::Label::builder().xalign(0.0).build();
+        repeat_feedback.add_css_class("caption");
+        repeat_feedback.add_css_class("dimmed");
+        repeat_feedback.set_visible(false);
+        body.append(&repeat_feedback);
+
         self.set_child(Some(&body));
 
         imp.calendar.replace(Some(calendar));
         imp.natural.replace(Some(natural));
         imp.time.replace(Some(time));
         imp.feedback.replace(Some(feedback));
+        imp.repeat.replace(Some(repeat));
+        imp.repeat_row.replace(Some(repeat_row));
+        imp.repeat_feedback.replace(Some(repeat_feedback));
     }
 
     fn today(&self) -> NaiveDate {
@@ -284,18 +364,111 @@ impl DatePicker {
         if self.imp().loading.get() {
             return;
         }
-        let Some(calendar) = self.imp().calendar.borrow().clone() else {
-            return;
-        };
-        let selected = calendar.date();
-        let Some(date) = NaiveDate::from_ymd_opt(
-            selected.year(),
-            selected.month() as u32,
-            selected.day_of_month() as u32,
-        ) else {
+        let Some(date) = self.selected_date() else {
             return;
         };
         self.choose(date);
+    }
+
+    /// The day the calendar is showing.
+    fn selected_date(&self) -> Option<NaiveDate> {
+        let calendar = self.imp().calendar.borrow().clone()?;
+        let selected = calendar.date();
+        NaiveDate::from_ymd_opt(
+            selected.year(),
+            selected.month() as u32,
+            selected.day_of_month() as u32,
+        )
+    }
+
+    /// Show what the typed repeat phrase would mean, without committing.
+    fn preview_repeat(&self) {
+        if !self.imp().repeat_enabled.get() {
+            return;
+        }
+        let Some(entry) = self.imp().repeat.borrow().clone() else {
+            return;
+        };
+        let text = entry.text().to_string();
+        let message = if text.trim().is_empty() {
+            String::new()
+        } else {
+            match parse_recurrence(&text, self.today()) {
+                Some(rule) => rule.describe(),
+                None => "Not a repeat".to_string(),
+            }
+        };
+        self.set_repeat_feedback(&message);
+    }
+
+    fn set_repeat_feedback(&self, text: &str) {
+        if let Some(label) = self.imp().repeat_feedback.borrow().as_ref() {
+            label.set_label(text);
+            label.set_visible(!text.is_empty());
+        }
+    }
+
+    /// Read the repeat box and report the task with that rule on it. An empty
+    /// box means "stop repeating"; a phrase that will not parse commits
+    /// nothing rather than quietly dropping the rule the task already had.
+    /// Type a phrase into the repeat box and commit it, as pressing Enter in
+    /// it does. The other half of the picker's job, alongside [`choose`]:
+    /// public for the same reason, and what the widget tests drive.
+    ///
+    /// [`choose`]: Self::choose
+    pub fn commit_repeat_text(&self, text: &str) {
+        if let Some(entry) = self.imp().repeat.borrow().as_ref() {
+            entry.set_text(text);
+        }
+        self.commit_repeat();
+    }
+
+    /// What the repeat box is showing.
+    pub fn repeat_text(&self) -> String {
+        self.imp()
+            .repeat
+            .borrow()
+            .as_ref()
+            .map(|entry| entry.text().to_string())
+            .unwrap_or_default()
+    }
+
+    fn commit_repeat(&self) {
+        if !self.imp().repeat_enabled.get() {
+            return;
+        }
+        let Some(entry) = self.imp().repeat.borrow().clone() else {
+            return;
+        };
+        let text = entry.text().to_string();
+        if text.trim().is_empty() {
+            self.set_repeat(None);
+            return;
+        }
+        match parse_recurrence(&text, self.today()) {
+            Some(rule) => self.set_repeat(Some(rule)),
+            None => self.set_repeat_feedback("Not a repeat"),
+        }
+    }
+
+    /// Report the task with `rule` on it, keeping its date and time.
+    ///
+    /// A recurrence lives inside a `Due`, so a rule needs a date to hang on. A
+    /// task that has none takes the rule's first occurrence — "every monday"
+    /// on a Thursday means the coming Monday, which is the only thing it could
+    /// mean and is better than silently landing today.
+    fn set_repeat(&self, rule: Option<Recurrence>) {
+        let imp = self.imp();
+        imp.recurrence.replace(rule.clone());
+
+        // No date and no rule leaves nothing to report: a repeat cannot exist
+        // without a date, so the task had none either.
+        let date = match (imp.has_date.get(), &rule) {
+            (true, _) => self.selected_date().unwrap_or_else(|| self.today()),
+            (false, Some(rule)) => rule.first_occurrence(self.today()),
+            (false, None) => return self.report(None),
+        };
+        self.report(Some(self.build_due(date)));
     }
 
     /// Assemble a due date from a chosen day, the time field, and the rule the
@@ -337,8 +510,11 @@ pub fn describe_due(due: Option<&Due>, today: NaiveDate) -> String {
     if let Some(time) = due.time {
         text.push_str(&format!(" at {}", time.format("%H:%M")));
     }
-    if due.is_recurring() {
-        text.push_str(" · repeats");
+    if let Some(rule) = due.recurrence.as_ref() {
+        // The rule itself, not the fact that there is one: "repeats" answers a
+        // question nobody asks at the moment they are looking for whether this
+        // is the daily one or the Monday one.
+        text.push_str(&format!(" · {}", rule.describe()));
     }
     text
 }
@@ -387,8 +563,13 @@ mod tests {
         let due = Due::at(today(), NaiveTime::from_hms_opt(9, 0, 0).unwrap());
         assert_eq!(describe_due(Some(&due), today()), "Today at 09:00");
 
+        // The rule itself, so the row distinguishes the weekly one from the
+        // daily one without being opened.
         let due = Due::on(date(2026, 8, 3)).repeating(Recurrence::every(1, Unit::Week));
-        assert_eq!(describe_due(Some(&due), today()), "Mon · repeats");
+        assert_eq!(describe_due(Some(&due), today()), "Mon · every week");
+
+        let due = Due::on(date(2026, 8, 3)).repeating(Recurrence::every_weekday());
+        assert_eq!(describe_due(Some(&due), today()), "Mon · every weekday");
     }
 
     #[test]

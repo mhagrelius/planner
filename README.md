@@ -65,6 +65,18 @@ five months out is worse than saying no.
 - **`every! 10 days`** counts from *completion*. Water the plants ten days
   after you last actually did, not ten days after you were meant to.
 
+The same phrase is how you change one later: the date picker has a repeat box,
+already filled in with what the task does now. It is a text box rather than a
+row of spinners because `every!` is the one piece of this that has no obvious
+widget, and a control set that could not say it would be worse than the syntax.
+Emptying the box stops the repeat and keeps the date; a phrase that will not
+parse changes nothing rather than guessing. Setting a repeat on a task with no
+date puts it on the rule's first occurrence — `every monday` typed on a
+Thursday means the coming Monday.
+
+Rules are shown as the phrase that would have produced them, so the schedule
+row reads `Mon · every weekday` rather than "repeats".
+
 ### Views and filters
 
 Inbox, Today, Upcoming, Pinned and Completed are built in. Every one of them is

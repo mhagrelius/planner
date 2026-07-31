@@ -557,7 +557,7 @@ fn widgets() {
         assert_eq!(panel.deadline_text(), "No deadline");
     });
 
-    runner.case("a repeating task says so on its schedule row", || {
+    runner.case("a repeating task's rule is on its schedule row", || {
         let mut store = store();
         let id = store.add_task(Task::new(ProjectId::inbox(), "Bins", now()));
         store.task_mut(&id).unwrap().due =
@@ -565,7 +565,7 @@ fn widgets() {
 
         let panel = DetailPanel::new();
         panel.show(&id, &store, today());
-        assert_eq!(panel.schedule_text(), "Mon · repeats");
+        assert_eq!(panel.schedule_text(), "Mon · every week");
     });
 
     runner.case("the panel re-reads a task after it changes", || {
@@ -632,6 +632,108 @@ fn widgets() {
             );
         },
     );
+
+    runner.case("the repeat box opens showing the rule the task has", || {
+        // Prefilled rather than blank: the phrase `describe` writes is the
+        // phrase that would have produced the rule, so editing the box is
+        // editing the rule rather than retyping it from scratch.
+        let picker = planner::ui::date_picker::DatePicker::new();
+        let due = Due::on(date(2026, 8, 3)).repeating(Recurrence::every_weekday());
+        picker.load(Some(&due), today());
+        assert_eq!(picker.repeat_text(), "every weekday");
+
+        picker.load(Some(&Due::on(date(2026, 8, 3))), today());
+        assert_eq!(picker.repeat_text(), "", "a task that does not repeat");
+    });
+
+    runner.case(
+        "a repeat typed into the picker keeps the task's date",
+        || {
+            let picker = planner::ui::date_picker::DatePicker::new();
+            let chosen: std::rc::Rc<std::cell::RefCell<Option<Option<Due>>>> = Default::default();
+            let sink = chosen.clone();
+            picker.connect_chosen(move |due| *sink.borrow_mut() = Some(due));
+
+            picker.load(Some(&Due::on(date(2026, 8, 3))), today());
+            picker.commit_repeat_text("every! 10 days");
+
+            let reported = chosen.borrow().clone().expect("the picker reported");
+            let reported = reported.expect("a date, not a clear");
+            assert_eq!(reported.date, date(2026, 8, 3), "the date moved");
+            let rule = reported.recurrence.expect("a rule");
+            assert!(rule.from_completion, "the bang was lost");
+            assert_eq!(rule.interval, 10);
+        },
+    );
+
+    runner.case(
+        "a repeat on a task with no date lands on its first occurrence",
+        || {
+            // A rule lives inside a `Due`, so it needs a date to hang on.
+            // "Every monday" on a Thursday means the coming Monday.
+            let picker = planner::ui::date_picker::DatePicker::new();
+            let chosen: std::rc::Rc<std::cell::RefCell<Option<Option<Due>>>> = Default::default();
+            let sink = chosen.clone();
+            picker.connect_chosen(move |due| *sink.borrow_mut() = Some(due));
+
+            picker.load(None, today());
+            picker.commit_repeat_text("every monday");
+
+            let reported = chosen.borrow().clone().expect("the picker reported");
+            let reported = reported.expect("a date, not a clear");
+            assert_eq!(reported.date, date(2026, 8, 3), "not the coming Monday");
+        },
+    );
+
+    runner.case(
+        "emptying the repeat box stops the repeat, not the date",
+        || {
+            let picker = planner::ui::date_picker::DatePicker::new();
+            let chosen: std::rc::Rc<std::cell::RefCell<Option<Option<Due>>>> = Default::default();
+            let sink = chosen.clone();
+            picker.connect_chosen(move |due| *sink.borrow_mut() = Some(due));
+
+            let due = Due::on(date(2026, 8, 3)).repeating(Recurrence::every(1, Unit::Week));
+            picker.load(Some(&due), today());
+            picker.commit_repeat_text("");
+
+            let reported = chosen.borrow().clone().expect("the picker reported");
+            let reported = reported.expect("the date went too");
+            assert_eq!(reported.date, date(2026, 8, 3));
+            assert!(!reported.is_recurring(), "still repeating");
+        },
+    );
+
+    runner.case(
+        "a repeat phrase that will not parse changes nothing",
+        || {
+            // The failure mode this guards: committing nonsense as "no rule",
+            // which would silently stop a task repeating because of a typo.
+            let picker = planner::ui::date_picker::DatePicker::new();
+            let chosen: std::rc::Rc<std::cell::RefCell<Option<Option<Due>>>> = Default::default();
+            let sink = chosen.clone();
+            picker.connect_chosen(move |due| *sink.borrow_mut() = Some(due));
+
+            let due = Due::on(date(2026, 8, 3)).repeating(Recurrence::every(1, Unit::Week));
+            picker.load(Some(&due), today());
+            picker.commit_repeat_text("every fortnight");
+
+            assert_eq!(chosen.borrow().clone(), None, "nonsense was committed");
+        },
+    );
+
+    runner.case("a deadline has no repeat box to type into", || {
+        let picker = planner::ui::date_picker::DatePicker::new();
+        picker.hide_repeat();
+        let chosen: std::rc::Rc<std::cell::RefCell<Option<Option<Due>>>> = Default::default();
+        let sink = chosen.clone();
+        picker.connect_chosen(move |due| *sink.borrow_mut() = Some(due));
+
+        picker.load(Some(&Due::on(date(2026, 8, 3))), today());
+        picker.commit_repeat_text("every week");
+
+        assert_eq!(chosen.borrow().clone(), None, "a deadline took a repeat");
+    });
 
     runner.case("clearing a date reports no date at all", || {
         let picker = planner::ui::date_picker::DatePicker::new();
