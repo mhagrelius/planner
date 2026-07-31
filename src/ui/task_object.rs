@@ -55,6 +55,11 @@ mod imp {
 
         #[property(get, set)]
         pub recurring: Cell<bool>,
+        /// The repeat rule in words, for the icon's tooltip. The icon says
+        /// *that* a task repeats and there is no room on a row to say more,
+        /// but hovering it should answer *how* without opening the task.
+        #[property(get, set)]
+        pub repeat_label: RefCell<String>,
         /// Label names, one per entry. The row turns each into its own chip,
         /// so this stays a list rather than a joined string — `", "` is a
         /// separator the row would have to guess back out again, and a label
@@ -113,12 +118,19 @@ impl TaskObject {
                 self.set_due_label(label);
                 self.set_due_class(class);
                 self.set_recurring(due.is_recurring());
+                self.set_repeat_label(
+                    due.recurrence
+                        .as_ref()
+                        .map(|rule| capitalise(&rule.describe()))
+                        .unwrap_or_default(),
+                );
             }
             None => {
                 self.set_has_due(false);
                 self.set_due_label("");
                 self.set_due_class("");
                 self.set_recurring(false);
+                self.set_repeat_label("");
             }
         }
 
@@ -189,6 +201,16 @@ pub fn format_due(
 }
 
 /// A date on its own, without the time.
+/// `describe` writes a fragment, lower case, because it usually follows
+/// something. A tooltip is a sentence on its own and wants a capital.
+fn capitalise(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
 pub fn format_date(date: NaiveDate, today: NaiveDate) -> String {
     let days = (date - today).num_days();
     match days {

@@ -133,7 +133,7 @@ impl TaskRow {
         let recurring = gtk::Image::from_icon_name("media-playlist-repeat-symbolic");
         recurring.set_pixel_size(16);
         recurring.add_css_class("dimmed");
-        recurring.set_tooltip_text(Some("Repeats"));
+        // The text comes from the task, bound in `bind`.
         details.append(&recurring);
 
         let deadline = gtk::Label::new(None);
@@ -271,6 +271,9 @@ impl TaskRow {
                 .sync_create()
                 .build(),
             item.bind_property("recurring", &recurring, "visible")
+                .sync_create()
+                .build(),
+            item.bind_property("repeat-label", &recurring, "tooltip-text")
                 .sync_create()
                 .build(),
             item.bind_property("deadline-label", &deadline, "label")
