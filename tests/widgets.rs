@@ -1174,6 +1174,56 @@ fn widgets() {
         },
     );
 
+    runner.case(
+        "an agent command edits the running application's own store",
+        || {
+            // The model tests drive `agent::execute` against a store directly.
+            // What only shows up here is the wiring around it: that the command
+            // reaches the store this process is holding, that the change is
+            // written out rather than left waiting for the save tick, and that
+            // the borrow taken to run it is released before the redraw that
+            // follows — a redraw reads the store, and re-entering a live
+            // `borrow_mut` aborts the process rather than failing a test.
+            let dir = tempfile::TempDir::new().expect("a temp dir");
+            std::env::set_var("XDG_DATA_HOME", dir.path());
+
+            let app = PlannerApplication::with_application_id("us.hagreli.Planner.AgentTest");
+            app.register(gtk::gio::Cancellable::NONE)
+                .expect("registering emits startup, which loads the store");
+
+            // A window, so the redraw after a change has something to run
+            // against rather than being skipped.
+            let window = PlannerWindow::new(&app);
+            window.refresh();
+
+            let arguments =
+                |line: &str| -> Vec<String> { line.split(' ').map(str::to_string).collect() };
+
+            let (output, ok) = app.agent_command(&arguments("add Ring the plumber p1 today"));
+            assert!(ok, "the command failed: {output}");
+            assert!(
+                app.with_store(|store| store
+                    .tasks()
+                    .iter()
+                    .any(|task| task.content == "Ring the plumber")),
+                "the running application's own store did not get the task"
+            );
+
+            // On disk already, not two seconds from now.
+            let written = std::fs::read_to_string(dir.path().join("planner").join("planner.json"))
+                .expect("the store was saved");
+            assert!(
+                written.contains("Ring the plumber"),
+                "an agent command must not leave its change unsaved"
+            );
+
+            // And a failure is reported without touching anything.
+            let (output, ok) = app.agent_command(&arguments("complete Nothing like this"));
+            assert!(!ok, "an impossible command should not report success");
+            assert!(output.contains("not-found"), "{output}");
+        },
+    );
+
     assert!(
         runner.failures.is_empty(),
         "{} widget case(s) failed:\n{}",

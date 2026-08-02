@@ -118,6 +118,37 @@ header; deleting one leaves its tasks in the project, and undo puts it back.
 | `Ctrl+K` | keep adding, in the quick-add dialog |
 | `Ctrl+Q` | quit |
 
+### From a script or an assistant
+
+`planner agent` reads and changes tasks from outside the window, printing JSON.
+
+```sh
+planner agent overview                     # projects, labels, counts
+planner agent list 'due: today | overdue'
+planner agent add Email Sam #Work @email p2 friday 9am
+planner agent complete 'Email Sam'
+planner agent update 'Email Sam' due=next friday priority=p1
+```
+
+It speaks the two languages the window already uses — a quick-add line to
+create, a filter query to list — rather than a second set of fields that could
+disagree with them. `planner agent help` documents both; `planner agent
+describe` prints the same thing as JSON, for a caller generating tool
+definitions.
+
+When Planner is running, the command is handed to it over the same D-Bus
+channel a second launch uses. That is not a detail: the running app holds the
+whole document in memory, so a separate process writing the file would be
+overwritten by its next save. Handing the command over instead means the
+window updates as the commands run. With no instance running, the command
+reads and writes the file itself.
+
+Replies name things rather than pointing at them — a project name, not a
+project id — and they say what actually happened. Completing a repeating task
+returns `completed-and-repeats` with the date it comes back on, because it is
+not finished. A reference matching two open tasks is an error listing both with
+their ids rather than a guess.
+
 ## How it works
 
 ```
@@ -132,6 +163,7 @@ src/
     schedule.rs       which reminders are due, and when the next one is
     store.rs          the JSON file: atomic writes, corruption recovery
     parse/            quick add — dates, times, repeats, tokens
+    agent/            the `planner agent` surface: verbs, JSON, its own help
   ui/
     application.rs    owns the store, the save tick and the reminder tick
     window.rs         the split views, the breakpoint, the view switching
