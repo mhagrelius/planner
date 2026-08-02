@@ -92,7 +92,9 @@ complete. JSON export/import. Per-project progress rings.
 ### Deliberately not in v1
 
 Sync, attachments, calendar-event display (needs libecal), change history,
-productivity/karma stats, a CLI + D-Bus service, i18n. Each is additive.
+productivity/karma stats, i18n. Each is additive.
+
+A CLI was in this list and came out; see **An agent interface** below.
 
 ## Architecture
 
@@ -195,6 +197,40 @@ Where the finished thing differs from this document, this is what happened.
   file was going to cover between them.
 - **Bulk label editing** is not in the multi-select bar. Priority, date,
   complete and delete are; labels need a picker that does not exist yet.
+
+## An agent interface
+
+`planner agent <verb>` — `model/agent/`, built after the milestones above, for
+an assistant to read and change tasks. Three decisions worth recording.
+
+**It rides the existing command line rather than a new D-Bus interface.** The
+app already has `HANDLES_COMMAND_LINE`, so a second invocation is forwarded to
+the running instance by GApplication, which is exactly the property this needs:
+the store is held whole in memory and flushed on a tick, so a separate process
+writing the file would be overwritten within two seconds. Forwarding makes the
+running app answer, which also makes the window update live. With nothing
+running the invoking process becomes primary and does the work itself. A custom
+D-Bus interface would have bought a second copy of that plumbing and nothing
+else.
+
+**It adds no vocabulary.** Creating a task takes a quick-add line and listing
+takes a filter query — the same parser and the same evaluator the dialog and
+the sidebar use. A separate set of `--title --due --project` flags would have
+been a second way to express the same things, free to diverge, and twice the
+surface to keep correct. What is new is only the *shape of the answers*: ids
+resolved to names, a due date flattened to one phrase, and a `describe` verb
+emitting the verb table as JSON so a caller can generate tool definitions
+without hardcoding them.
+
+**Positional arguments, no `--flags`.** Not a style choice: `GOption` parses
+the command line before any of this code runs and rejects options it was not
+told about, while unknown *words* pass through. Per-verb flags are therefore
+impossible without registering every one globally. `key=value` pairs carry the
+same information and cost nothing. `--help` still works — it is GOption's, and
+it points at `planner agent help`.
+
+Deliberately out: creating sections (`update` can file into an existing one,
+and `overview` lists them), reordering, reminders, saved filters, and undo.
 
 ## Settled
 

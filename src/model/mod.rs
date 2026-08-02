@@ -6,6 +6,7 @@
 //! an argument, which is the difference between a test and a bug report filed
 //! next February.
 
+pub mod agent;
 pub mod color;
 pub mod due;
 pub mod id;

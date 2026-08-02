@@ -98,6 +98,22 @@ mod imp {
         /// to the instance already running.
         fn command_line(&self, command_line: &gio::ApplicationCommandLine) -> glib::ExitCode {
             let obj = self.obj();
+
+            // `agent` is a command, not a launch. It is handled here, before
+            // anything is presented, precisely so that it *is* the running
+            // instance that answers when there is one: the store lives in that
+            // process's memory and a second process writing the file behind it
+            // would be overwritten by its next save.
+            let arguments: Vec<String> = command_line
+                .arguments()
+                .iter()
+                .skip(1)
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect();
+            if arguments.first().is_some_and(|word| word == "agent") {
+                return obj.run_agent(command_line, &arguments[1..]);
+            }
+
             obj.activate();
 
             let wants_quick_add = command_line
@@ -170,7 +186,79 @@ impl PlannerApplication {
             "Open the quick-add dialog",
             None,
         );
+
+        // `--help` is answered by GOption before any of this crate's code
+        // runs, so it is the one page a caller is guaranteed to be able to
+        // reach by guessing. It therefore has to say where the rest is.
+        app.set_option_context_parameter_string(Some("[agent VERB ...]"));
+        app.set_option_context_summary(Some(
+            "Run with no arguments to open the window.\n\n\
+             `planner agent VERB` reads and changes tasks from a script or an \
+             assistant, printing JSON.\nIt is answered by the running Planner \
+             when there is one, so the window stays in step.",
+        ));
+        app.set_option_context_description(Some(
+            "Start with:\n  \
+             planner agent help          every verb, and the two mini-languages\n  \
+             planner agent describe      the same thing as JSON\n  \
+             planner agent overview      the projects, labels and counts that exist",
+        ));
         app
+    }
+
+    /// Run an agent command against this application's store.
+    ///
+    /// Returns what to print and whether it worked. Split from the command
+    /// line itself so the part with the rules in it — borrow, save, redraw —
+    /// can be tested by driving the real application, which constructing a
+    /// `gio::ApplicationCommandLine` by hand does not allow.
+    ///
+    /// The store is borrowed for exactly as long as the command takes and the
+    /// borrow is dropped before anything redraws: a refresh reads the store,
+    /// and re-entering a live `borrow_mut` aborts the process.
+    pub fn agent_command(&self, arguments: &[String]) -> (String, bool) {
+        use crate::model::agent;
+
+        let now = chrono::Utc::now();
+        let today = crate::ui::today();
+
+        let result = agent::parse(arguments).and_then(|command| {
+            let mut store = self.imp().store.borrow_mut();
+            agent::execute(&mut store, command, now, today)
+        });
+
+        // Written out now rather than left to the save tick. A caller has been
+        // told the change happened, and "it is in the memory of a process you
+        // cannot see" is not that.
+        if result
+            .as_ref()
+            .is_ok_and(agent::Response::changed_the_store)
+        {
+            self.imp().dirty.set(true);
+            self.save_now();
+            self.refresh();
+        }
+
+        (agent::render(&result), result.is_ok())
+    }
+
+    /// Answer an `agent` command line.
+    fn run_agent(
+        &self,
+        command_line: &gio::ApplicationCommandLine,
+        arguments: &[String],
+    ) -> glib::ExitCode {
+        let (output, ok) = self.agent_command(arguments);
+
+        // `print_literal` goes back to the process that ran the command, which
+        // is what makes this work when the answer came from a different one.
+        command_line.print_literal(&format!("{output}\n"));
+
+        if ok {
+            glib::ExitCode::SUCCESS
+        } else {
+            glib::ExitCode::FAILURE
+        }
     }
 
     // --- the store ------------------------------------------------------
