@@ -203,6 +203,17 @@ impl Store {
                     document,
                     read_only: false,
                 };
+                // Stamp the version this build writes, now rather than at save
+                // time. A file read as v1 and written back with v2's contents
+                // still claiming to be v1 is the one shape the version guard
+                // cannot protect anyone from: an older build would accept the
+                // claim, fail to parse the fields, and quarantine a document
+                // that was never corrupt.
+                //
+                // Not done on the read-only branch above: that store refuses
+                // to save, and `SaveError::Newer` reports the version the file
+                // actually carries.
+                store.document.version = SCHEMA_VERSION;
                 store.ensure_inbox();
                 store.lift_legacy_sections();
                 tombstone::purge_expired(&mut store.document.tombstones, Utc::now());
@@ -1413,6 +1424,14 @@ mod tests {
 
         // Saving writes v2, and reopening finds the same list.
         store.save().expect("save");
+
+        // And it *says* v2. A file carrying v2's fields under v1's number is
+        // worse than either: an older build accepts the number, cannot read
+        // the fields, and sets aside a document that was never corrupt.
+        let written: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written["version"], SCHEMA_VERSION);
+
         let (reopened, outcome) = Store::open_at(&path);
         assert_eq!(outcome, LoadOutcome::Loaded);
         assert_eq!(
