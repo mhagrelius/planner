@@ -38,6 +38,7 @@ use super::id::{FilterId, LabelId, ProjectId, SectionId, TaskId};
 use super::order::Order;
 use super::project::{Label, Project, SavedFilter, Section};
 use super::task::{Completion, Task};
+use super::tombstone::{self, RecordKind, Tombstone};
 
 /// The schema version written into every file.
 ///
@@ -63,6 +64,11 @@ struct Document {
     tasks: Vec<Task>,
     #[serde(default)]
     filters: Vec<SavedFilter>,
+    /// What has been deleted, so that another machine can be told the
+    /// difference between a record gone and a record not yet arrived. See
+    /// [`crate::tombstone`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tombstones: Vec<Tombstone>,
 }
 
 impl Default for Document {
@@ -74,6 +80,7 @@ impl Default for Document {
             labels: Vec::new(),
             tasks: Vec::new(),
             filters: Vec::new(),
+            tombstones: Vec::new(),
         }
     }
 }
@@ -187,6 +194,7 @@ impl Store {
                 };
                 store.ensure_inbox();
                 store.lift_legacy_sections();
+                tombstone::purge_expired(&mut store.document.tombstones, Utc::now());
                 (store, LoadOutcome::ReadOnly { version })
             }
             Ok(document) => {
@@ -197,6 +205,7 @@ impl Store {
                 };
                 store.ensure_inbox();
                 store.lift_legacy_sections();
+                tombstone::purge_expired(&mut store.document.tombstones, Utc::now());
                 (store, LoadOutcome::Loaded)
             }
             Err(error) => {
@@ -236,6 +245,48 @@ impl Store {
         if !self.document.projects.iter().any(|p| p.is_inbox()) {
             self.document.projects.insert(0, Project::inbox());
         }
+    }
+
+    // --- tombstones -----------------------------------------------------
+
+    /// Note that a record has been deleted.
+    ///
+    /// Every deletion goes through here, and every re-insertion through
+    /// [`unmark`](Self::unmark), so the two cannot drift apart.
+    fn mark_deleted(&mut self, kind: RecordKind, id: impl Into<String>, now: DateTime<Utc>) {
+        let id = id.into();
+        self.document
+            .tombstones
+            .retain(|t| !(t.kind == kind && t.id == id));
+        self.document.tombstones.push(Tombstone {
+            kind,
+            id,
+            deleted_at: now,
+        });
+    }
+
+    /// Forget that a record was deleted, because it is back.
+    ///
+    /// An undo that left the marker would delete the record again on the next
+    /// sync — the app would report the undo worked, and it would, until a pass
+    /// ran.
+    fn unmark(&mut self, kind: RecordKind, id: &str) {
+        self.document
+            .tombstones
+            .retain(|t| !(t.kind == kind && t.id == id));
+    }
+
+    /// Every deletion this store knows about.
+    pub fn tombstones(&self) -> &[Tombstone] {
+        &self.document.tombstones
+    }
+
+    /// Whether a record was deleted rather than never seen.
+    pub fn is_deleted(&self, kind: RecordKind, id: &str) -> bool {
+        self.document
+            .tombstones
+            .iter()
+            .any(|t| t.kind == kind && t.id == id)
     }
 
     /// Lift schema v1's nested sections out into the document's own list.
@@ -360,6 +411,7 @@ impl Store {
             .max()
             .map_or(0, |max| max + 1);
         let id = project.id.clone();
+        self.unmark(RecordKind::Project, id.as_str());
         self.document.projects.push(project);
         id
     }
@@ -374,7 +426,7 @@ impl Store {
     ///
     /// Returns what was removed so the caller can offer an undo. The Inbox
     /// cannot be deleted; asking to is a no-op rather than an error.
-    pub fn remove_project(&mut self, id: &ProjectId) -> Option<RemovedProject> {
+    pub fn remove_project(&mut self, id: &ProjectId, now: DateTime<Utc>) -> Option<RemovedProject> {
         if id.is_inbox() || self.project(id).is_none() {
             return None;
         }
@@ -390,6 +442,19 @@ impl Store {
         });
         let tasks: Vec<Task> =
             extract(&mut self.document.tasks, |t| doomed.contains(&t.project_id));
+
+        // Each record individually, not just the project. A machine replaying
+        // this needs to delete the same set; told only that the project went,
+        // it would keep every task and section that hung off it.
+        for project in &projects {
+            self.mark_deleted(RecordKind::Project, project.id.to_string(), now);
+        }
+        for section in &sections {
+            self.mark_deleted(RecordKind::Section, section.id.to_string(), now);
+        }
+        for task in &tasks {
+            self.mark_deleted(RecordKind::Task, task.id.to_string(), now);
+        }
 
         Some(RemovedProject {
             projects,
@@ -429,6 +494,7 @@ impl Store {
             .map(|existing| existing.order.clone());
         section.order = Order::between(last.as_ref(), None);
         let id = section.id.clone();
+        self.unmark(RecordKind::Section, id.as_str());
         self.document.sections.push(section);
         id
     }
@@ -440,6 +506,7 @@ impl Store {
         let index = self.document.sections.iter().position(|s| &s.id == id)?;
         let section = self.document.sections.remove(index);
         let project_id = section.project_id.clone();
+        self.mark_deleted(RecordKind::Section, section.id.to_string(), now);
 
         let mut tasks = Vec::new();
         for task in self.document.tasks.iter_mut() {
@@ -468,6 +535,7 @@ impl Store {
         }
         // Keeps its own key rather than being appended, so an undone deletion
         // lands back where it was taken from.
+        self.unmark(RecordKind::Section, removed.section.id.as_str());
         self.document.sections.push(removed.section);
 
         for task in self.document.tasks.iter_mut() {
@@ -519,6 +587,7 @@ impl Store {
         let mut label = Label::new(name, color::least_used(&used));
         label.order = self.document.labels.len() as i32;
         let id = label.id.clone();
+        self.unmark(RecordKind::Label, id.as_str());
         self.document.labels.push(label);
         id
     }
@@ -527,6 +596,7 @@ impl Store {
     pub fn remove_label(&mut self, id: &LabelId, now: DateTime<Utc>) -> Option<Label> {
         let index = self.document.labels.iter().position(|l| &l.id == id)?;
         let removed = self.document.labels.remove(index);
+        self.mark_deleted(RecordKind::Label, removed.id.to_string(), now);
 
         for task in self.document.tasks.iter_mut() {
             if task.has_label(id) {
@@ -557,6 +627,9 @@ impl Store {
     /// Save a filter, or replace one with the same ID.
     pub fn put_filter(&mut self, filter: SavedFilter) -> FilterId {
         let id = filter.id.clone();
+        // This is the undo path as well as the create path, so it is where a
+        // deleted filter comes back.
+        self.unmark(RecordKind::Filter, id.as_str());
         match self
             .document
             .filters
@@ -580,13 +653,15 @@ impl Store {
     }
 
     /// Delete a filter, returning it so it can be undone.
-    pub fn remove_filter(&mut self, id: &FilterId) -> Option<SavedFilter> {
+    pub fn remove_filter(&mut self, id: &FilterId, now: DateTime<Utc>) -> Option<SavedFilter> {
         let index = self
             .document
             .filters
             .iter()
             .position(|filter| &filter.id == id)?;
-        Some(self.document.filters.remove(index))
+        let removed = self.document.filters.remove(index);
+        self.mark_deleted(RecordKind::Filter, removed.id.to_string(), now);
+        Some(removed)
     }
 
     /// The colour a new filter should take.
@@ -623,6 +698,7 @@ impl Store {
             .cloned();
         task.order = Order::between(last.as_ref(), None);
         let id = task.id.clone();
+        self.unmark(RecordKind::Task, id.as_str());
         self.document.tasks.push(task);
         id
     }
@@ -901,18 +977,37 @@ impl Store {
     /// Deleting a parent must take its children: leaving them behind would
     /// orphan them into a project view they have no row in, where they are
     /// invisible but still count towards every total.
-    pub fn remove_task(&mut self, id: &TaskId) -> Vec<Task> {
+    pub fn remove_task(&mut self, id: &TaskId, now: DateTime<Utc>) -> Vec<Task> {
         let doomed = self.task_and_descendants(id);
-        extract(&mut self.document.tasks, |t| doomed.contains(&t.id))
+        let removed: Vec<Task> = extract(&mut self.document.tasks, |t| doomed.contains(&t.id));
+        // Every subtask by name, not just the parent: replaying "the parent
+        // went" elsewhere would leave the children orphaned rather than gone.
+        for task in &removed {
+            self.mark_deleted(RecordKind::Task, task.id.to_string(), now);
+        }
+        removed
     }
 
     /// Put previously removed tasks back, for undo.
     pub fn restore_tasks(&mut self, tasks: Vec<Task>) {
+        for task in &tasks {
+            self.unmark(RecordKind::Task, task.id.as_str());
+        }
         self.document.tasks.extend(tasks);
     }
 
     /// Put a previously removed project, its subprojects and its tasks back.
     pub fn restore_project(&mut self, removed: RemovedProject) {
+        for project in &removed.projects {
+            self.unmark(RecordKind::Project, project.id.as_str());
+        }
+        for section in &removed.sections {
+            self.unmark(RecordKind::Section, section.id.as_str());
+        }
+        for task in &removed.tasks {
+            self.unmark(RecordKind::Task, task.id.as_str());
+        }
+
         self.document.projects.extend(removed.projects);
         self.document.sections.extend(removed.sections);
         self.document.tasks.extend(removed.tasks);
@@ -1279,7 +1374,9 @@ mod tests {
         let doomed_section = store.add_section(Section::new(child.clone(), "Doing"));
         let survivor = task(&mut store, "Untouched inbox task");
 
-        let removed = store.remove_project(&parent).expect("project was there");
+        let removed = store
+            .remove_project(&parent, instant(2026, 7, 31))
+            .expect("project was there");
 
         assert_eq!(removed.projects.len(), 2);
         assert_eq!(removed.tasks.len(), 1);
@@ -1298,10 +1395,90 @@ mod tests {
         );
     }
 
+    // --- tombstones -----------------------------------------------------
+
+    #[test]
+    fn deleting_a_task_leaves_a_marker_naming_every_subtask() {
+        let (_dir, mut store) = store();
+        let parent = task(&mut store, "Move house");
+        let child = store.add_task(Task::new(ProjectId::inbox(), "Pack", instant(2026, 7, 30)));
+        store.task_mut(&child).unwrap().parent_id = Some(parent.clone());
+
+        store.remove_task(&parent, instant(2026, 7, 31));
+
+        // Both by name. Told only that the parent went, another machine would
+        // leave the child orphaned rather than delete it.
+        assert!(store.is_deleted(RecordKind::Task, parent.as_str()));
+        assert!(store.is_deleted(RecordKind::Task, child.as_str()));
+    }
+
+    #[test]
+    fn undoing_a_deletion_takes_the_marker_with_it() {
+        let (_dir, mut store) = store();
+        let id = task(&mut store, "Not really going");
+
+        let removed = store.remove_task(&id, instant(2026, 7, 31));
+        assert!(store.is_deleted(RecordKind::Task, id.as_str()));
+
+        store.restore_tasks(removed);
+
+        // A marker left behind would delete the task again on the next sync:
+        // the undo works, and keeps working, until a pass runs.
+        assert!(store.task(&id).is_some());
+        assert!(!store.is_deleted(RecordKind::Task, id.as_str()));
+    }
+
+    #[test]
+    fn markers_survive_a_round_trip_through_the_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("planner.json");
+        let id = {
+            let (mut store, _) = Store::open_at(&path);
+            let id = store.add_task(Task::new(
+                ProjectId::inbox(),
+                "Delete me",
+                instant(2026, 7, 30),
+            ));
+            store.remove_task(&id, Utc::now());
+            store.save().expect("save");
+            id
+        };
+
+        // A machine that has been switched off asks what changed. If the
+        // deletion did not survive the file, the answer is "nothing" and the
+        // task comes back from the other side.
+        let (reopened, _) = Store::open_at(&path);
+        assert!(reopened.is_deleted(RecordKind::Task, id.as_str()));
+        assert!(reopened.task(&id).is_none());
+    }
+
+    #[test]
+    fn deleting_a_project_marks_its_sections_and_tasks_individually() {
+        let (_dir, mut store) = store();
+        let project = store.add_project(Project::new("Work", Color::Blue));
+        let section = store.add_section(Section::new(project.clone(), "Doing"));
+        let inside = store.add_task(Task::new(project.clone(), "Ship it", instant(2026, 7, 30)));
+
+        let removed = store
+            .remove_project(&project, instant(2026, 7, 31))
+            .expect("it was there");
+
+        assert!(store.is_deleted(RecordKind::Project, project.as_str()));
+        assert!(store.is_deleted(RecordKind::Section, section.as_str()));
+        assert!(store.is_deleted(RecordKind::Task, inside.as_str()));
+
+        store.restore_project(removed);
+        assert!(!store.is_deleted(RecordKind::Project, project.as_str()));
+        assert!(!store.is_deleted(RecordKind::Section, section.as_str()));
+        assert!(!store.is_deleted(RecordKind::Task, inside.as_str()));
+    }
+
     #[test]
     fn the_inbox_cannot_be_deleted() {
         let (_dir, mut store) = store();
-        assert!(store.remove_project(&ProjectId::inbox()).is_none());
+        assert!(store
+            .remove_project(&ProjectId::inbox(), instant(2026, 7, 31))
+            .is_none());
         assert!(store.project(&ProjectId::inbox()).is_some());
     }
 
@@ -1313,7 +1490,7 @@ mod tests {
         task.project_id = id.clone();
         let task_id = store.add_task(task);
 
-        let removed = store.remove_project(&id).unwrap();
+        let removed = store.remove_project(&id, instant(2026, 7, 31)).unwrap();
         store.restore_project(removed);
 
         assert!(store.project(&id).is_some());
@@ -1438,7 +1615,7 @@ mod tests {
         store.task_mut(&child).unwrap().parent_id = Some(parent.clone());
         store.task_mut(&grandchild).unwrap().parent_id = Some(child.clone());
 
-        let removed = store.remove_task(&parent);
+        let removed = store.remove_task(&parent, instant(2026, 7, 31));
 
         assert_eq!(removed.len(), 3);
         assert!(store.tasks().is_empty());
@@ -1448,7 +1625,7 @@ mod tests {
     fn deleted_tasks_can_be_put_back_for_undo() {
         let (_dir, mut store) = store();
         let id = task(&mut store, "Oops");
-        let removed = store.remove_task(&id);
+        let removed = store.remove_task(&id, instant(2026, 7, 31));
         store.restore_tasks(removed);
         assert_eq!(store.task(&id).unwrap().content, "Oops");
     }
@@ -1732,7 +1909,7 @@ mod tests {
     fn moving_to_a_project_that_is_gone_is_refused() {
         let (_dir, mut store) = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        store.remove_project(&project);
+        store.remove_project(&project, instant(2026, 7, 31));
         let id = store.add_task(Task::new(
             ProjectId::inbox(),
             "Still here",
@@ -1872,7 +2049,7 @@ mod tests {
     fn a_default_project_that_has_been_deleted_falls_back_to_the_inbox() {
         let (_dir, mut store) = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        store.remove_project(&project);
+        store.remove_project(&project, instant(2026, 7, 31));
 
         let parsed =
             crate::parse::parse_quick_add("Orphan", date(2026, 7, 30), &store.vocabulary());
@@ -1965,10 +2142,12 @@ mod tests {
         let (_dir, mut store) = store();
         let id = store.put_filter(SavedFilter::new("Gone", "p1", Color::Blue));
 
-        let removed = store.remove_filter(&id).expect("it was there");
+        let removed = store
+            .remove_filter(&id, instant(2026, 7, 31))
+            .expect("it was there");
         assert_eq!(removed.name, "Gone");
         assert!(store.filter(&id).is_none());
-        assert_eq!(store.remove_filter(&id), None);
+        assert_eq!(store.remove_filter(&id, instant(2026, 7, 31)), None);
 
         store.put_filter(removed);
         assert!(store.filter(&id).is_some());

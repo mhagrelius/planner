@@ -208,7 +208,7 @@ fn completing_and_undoing_leaves_the_store_where_it_started() {
     assert!(!store.task(&parent.id).unwrap().checked);
 
     // And a delete can be undone whole.
-    let removed = store.remove_task(&parent.id);
+    let removed = store.remove_task(&parent.id, instant(2026, 7, 31));
     assert_eq!(removed.len(), 2);
     store.restore_tasks(removed);
     assert!(store.task(&parent.id).is_some());
@@ -295,7 +295,9 @@ fn deleting_a_project_and_undoing_it_restores_every_task() {
     quick_add(&mut store, "In admin #Admin", today, instant(2026, 7, 30));
     quick_add(&mut store, "In the inbox", today, instant(2026, 7, 30));
 
-    let removed = store.remove_project(&work).expect("the project");
+    let removed = store
+        .remove_project(&work, instant(2026, 7, 31))
+        .expect("the project");
     assert_eq!(store.tasks().len(), 1, "only the inbox task is left");
 
     store.restore_project(removed);

@@ -27,6 +27,7 @@ pub mod schedule;
 pub mod search;
 pub mod store;
 pub mod task;
+pub mod tombstone;
 
 pub use color::Color;
 pub use due::Due;
@@ -40,3 +41,4 @@ pub use schedule::Schedule;
 pub use search::{search, Hit};
 pub use store::{LoadOutcome, SaveError, Store};
 pub use task::{Completion, Reminder, Task, Trigger};
+pub use tombstone::{RecordKind, Tombstone};

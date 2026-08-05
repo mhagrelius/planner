@@ -615,7 +615,8 @@ impl PlannerApplication {
         &self,
         id: &crate::model::ProjectId,
     ) -> Option<crate::model::store::RemovedProject> {
-        let removed = self.mutate(|store| store.remove_project(id));
+        let now = chrono::Utc::now();
+        let removed = self.mutate(|store| store.remove_project(id, now));
         self.refresh();
         removed
     }
@@ -681,7 +682,8 @@ impl PlannerApplication {
 
     /// Delete a filter.
     pub fn remove_filter(&self, id: &crate::model::FilterId) {
-        self.mutate(|store| store.remove_filter(id));
+        let now = chrono::Utc::now();
+        self.mutate(|store| store.remove_filter(id, now));
         self.refresh();
     }
 
@@ -728,9 +730,10 @@ impl PlannerApplication {
 
     /// Delete several tasks, returning them all so it can be undone.
     pub fn delete_all(&self, ids: &[TaskId]) -> Vec<crate::model::Task> {
+        let now = chrono::Utc::now();
         let removed = self.mutate(|store| {
             ids.iter()
-                .flat_map(|id| store.remove_task(id))
+                .flat_map(|id| store.remove_task(id, now))
                 .collect::<Vec<_>>()
         });
         self.refresh();
@@ -780,7 +783,8 @@ impl PlannerApplication {
 
     /// Delete a task and its subtasks, returning them so it can be undone.
     pub fn delete_task(&self, id: &TaskId) -> Vec<crate::model::Task> {
-        let removed = self.mutate(|store| store.remove_task(id));
+        let now = chrono::Utc::now();
+        let removed = self.mutate(|store| store.remove_task(id, now));
         self.refresh();
         removed
     }

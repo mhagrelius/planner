@@ -539,7 +539,7 @@ fn widgets() {
         panel.show(&id, &store, today());
         assert!(panel.is_showing_task());
 
-        store.remove_task(&id);
+        store.remove_task(&id, now());
         panel.show(&id, &store, today());
 
         assert!(!panel.is_showing_task());
@@ -598,7 +598,7 @@ fn widgets() {
             panel.show(&parent, &store, today());
             assert_eq!(panel.subtask_count(), 1);
 
-            store.remove_task(&child);
+            store.remove_task(&child, now());
             panel.show(&parent, &store, today());
             assert_eq!(
                 panel.subtask_count(),

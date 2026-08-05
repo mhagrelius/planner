@@ -228,7 +228,7 @@ pub fn execute(
 
         Command::Delete { task } => {
             let id = resolve_task(store, &task)?;
-            let removed = store.remove_task(&id);
+            let removed = store.remove_task(&id, now);
             Ok(Response::Deleted {
                 count: removed.len(),
                 removed: removed.iter().map(view::RemovedView::of).collect(),
@@ -272,7 +272,7 @@ pub fn execute(
                 .project(&id)
                 .map(|project| project.name.clone())
                 .unwrap_or_default();
-            match store.remove_project(&id) {
+            match store.remove_project(&id, now) {
                 Some(removed) => Ok(Response::ProjectRemoved {
                     name,
                     projects: removed.projects.len(),
