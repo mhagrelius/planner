@@ -636,6 +636,15 @@ dependencies = [
  "gio",
  "gtk4",
  "libadwaita",
+ "planner-core",
+ "tempfile",
+]
+
+[[package]]
+name = "planner-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
  "serde",
  "serde_json",
  "tempfile",

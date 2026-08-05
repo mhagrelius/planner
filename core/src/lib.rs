@@ -5,6 +5,13 @@
 //! clock either: any function whose answer depends on today's date takes it as
 //! an argument, which is the difference between a test and a bug report filed
 //! next February.
+//!
+//! It is a crate of its own rather than a module because `planner-server` needs
+//! these types — the two halves must agree on what a task is, and a second
+//! definition of that is a bug waiting for someone to change one of them — and
+//! a container has no business linking libadwaita to get them. The GTK shell
+//! re-exports the whole thing as `planner::model`, so call sites there read as
+//! they did when this was a directory.
 
 pub mod agent;
 pub mod color;

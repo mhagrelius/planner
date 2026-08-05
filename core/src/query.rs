@@ -607,11 +607,11 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::color::Color;
-    use crate::model::due::Due;
-    use crate::model::id::ProjectId;
-    use crate::model::project::{Project, Section};
-    use crate::model::recurrence::{Recurrence, Unit};
+    use crate::color::Color;
+    use crate::due::Due;
+    use crate::id::ProjectId;
+    use crate::project::{Project, Section};
+    use crate::recurrence::{Recurrence, Unit};
     use chrono::{DateTime, Utc};
 
     /// Thursday, 30 July 2026.
@@ -639,7 +639,7 @@ mod tests {
         store
     }
 
-    fn task(store: &mut Store, content: &str) -> crate::model::id::TaskId {
+    fn task(store: &mut Store, content: &str) -> crate::id::TaskId {
         store.add_task(Task::new(ProjectId::inbox(), content, now()))
     }
 

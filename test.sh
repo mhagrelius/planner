@@ -39,9 +39,12 @@ echo "==> cargo fmt --check"
 cargo fmt --all -- --check
 
 echo "==> cargo clippy"
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 
-run cargo test --all-targets
+# --workspace so planner-core is tested too. Without it cargo checks only the
+# root package, and the half of the suite that needs no display — which is most
+# of it — silently stops running.
+run cargo test --workspace --all-targets
 
 echo
 echo "All green."

@@ -73,27 +73,27 @@ macro_rules! id_type {
 }
 
 id_type!(
-    /// Identifies a [`Task`](crate::model::Task).
+    /// Identifies a [`Task`](crate::Task).
     TaskId
 );
 id_type!(
-    /// Identifies a [`Project`](crate::model::Project).
+    /// Identifies a [`Project`](crate::Project).
     ProjectId
 );
 id_type!(
-    /// Identifies a [`Section`](crate::model::Section) within a project.
+    /// Identifies a [`Section`](crate::Section) within a project.
     SectionId
 );
 id_type!(
-    /// Identifies a [`Label`](crate::model::Label).
+    /// Identifies a [`Label`](crate::Label).
     LabelId
 );
 id_type!(
-    /// Identifies a [`Reminder`](crate::model::Reminder) on a task.
+    /// Identifies a [`Reminder`](crate::Reminder) on a task.
     ReminderId
 );
 id_type!(
-    /// Identifies a [`SavedFilter`](crate::model::SavedFilter).
+    /// Identifies a [`SavedFilter`](crate::SavedFilter).
     FilterId
 );
 

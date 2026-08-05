@@ -25,8 +25,8 @@ use chrono::NaiveDate;
 
 use super::date::{parse_date, parse_time};
 use super::recurrence::parse_recurrence;
-use crate::model::due::Due;
-use crate::model::priority::Priority;
+use crate::due::Due;
+use crate::priority::Priority;
 
 /// The names already in the store, so multi-word ones can be recognised.
 #[derive(Debug, Default, Clone)]
@@ -390,7 +390,7 @@ fn remaining(words: &[Word]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::recurrence::Unit;
+    use crate::recurrence::Unit;
     use chrono::{NaiveTime, Weekday};
 
     /// Thursday, 30 July 2026.
@@ -547,7 +547,7 @@ mod tests {
         assert_eq!(due.date, date(2026, 8, 3));
         assert_eq!(
             due.recurrence,
-            Some(crate::model::Recurrence::weekly_on(1, [Weekday::Mon]))
+            Some(crate::Recurrence::weekly_on(1, [Weekday::Mon]))
         );
         assert_eq!(parsed.title, "Bins");
     }
@@ -573,7 +573,7 @@ mod tests {
         assert_eq!(parsed.title, "Daily standup");
         assert_eq!(
             parsed.due.unwrap().recurrence,
-            Some(crate::model::Recurrence::every_weekday())
+            Some(crate::Recurrence::every_weekday())
         );
     }
 

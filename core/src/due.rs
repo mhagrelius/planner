@@ -82,7 +82,7 @@ impl Due {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::recurrence::{End, Unit};
+    use crate::recurrence::{End, Unit};
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, d).unwrap()

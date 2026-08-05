@@ -220,7 +220,7 @@ impl Task {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::recurrence::{End, Recurrence, Unit};
+    use crate::recurrence::{End, Recurrence, Unit};
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, d).unwrap()

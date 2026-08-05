@@ -10,7 +10,13 @@
 //! natural-language parsing — all of which are pure functions over plain data,
 //! and none of which should need a Wayland socket to test.
 
-pub mod model;
+/// The half that does not draw, which lives in its own crate so that
+/// `planner-server` can link it without libadwaita.
+///
+/// Re-exported under the name it had when it was a directory, so that
+/// `crate::model::Task` still means what it always did.
+pub use planner_core as model;
+
 pub mod ui;
 
 /// The application ID, used for D-Bus, the desktop file, and GSettings.

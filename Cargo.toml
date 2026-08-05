@@ -1,3 +1,6 @@
+[workspace]
+members = ["core"]
+
 [package]
 name = "planner"
 version = "0.1.0"
@@ -17,14 +20,16 @@ name = "planner"
 path = "src/lib.rs"
 
 [dependencies]
+# The records, the store, the query language, the quick-add parser and the
+# agent interface. Links no UI toolkit, so it is the half `planner-server`
+# shares and the half a shell on another platform would keep. Re-exported from
+# src/lib.rs as `planner::model`, which is the path every call site here uses.
+planner-core = { path = "core" }
 gtk = { package = "gtk4", version = "0.11", features = ["v4_22"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }
 gio = { version = "0.22", features = ["v2_80"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-# Date arithmetic that is genuinely hard to hand-roll: month-end clamping,
-# weekday math, and DST transitions in the local zone. Everything else in
-# `model` is plain std.
+# `clock` for `ui::today()`, the one place anything asks what day it is.
+# planner-core takes chrono without it on purpose.
 chrono = { version = "0.4", default-features = false, features = [
     "std",
     "clock",

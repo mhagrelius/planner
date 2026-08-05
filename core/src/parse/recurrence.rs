@@ -11,7 +11,7 @@
 use chrono::{NaiveDate, Weekday};
 
 use super::date::{normalise, parse_date, singular, weekday_from_name};
-use crate::model::recurrence::{End, Recurrence, Unit};
+use crate::recurrence::{End, Recurrence, Unit};
 
 /// Parse a complete repeat phrase. The whole string must be consumed.
 pub fn parse_recurrence(text: &str, today: NaiveDate) -> Option<Recurrence> {

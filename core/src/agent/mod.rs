@@ -23,10 +23,11 @@
 //! including every error message an assistant will ever see — be tested
 //! without a display, a bus, or a real planner file.
 //!
-//! Where this runs matters and is decided by the caller in
-//! [`ui::application`](crate::ui::application): when Planner is open, the
-//! command is handed to the running instance, because it holds the document in
-//! memory and would otherwise overwrite anything written behind its back.
+//! Where this runs matters and is decided by the caller — the GTK shell's
+//! `ui::application`, which lives in the `planner` crate above this one: when
+//! Planner is open, the command is handed to the running instance, because it
+//! holds the document in memory and would otherwise overwrite anything written
+//! behind its back.
 
 pub mod command;
 pub mod help;
@@ -35,14 +36,14 @@ pub mod view;
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::Serialize;
 
-use crate::model::id::{ProjectId, SectionId, TaskId};
-use crate::model::parse::{parse_date, parse_quick_add, Vocabulary};
-use crate::model::project::Project;
-use crate::model::query::Query;
-use crate::model::search::search;
-use crate::model::store::Store;
-use crate::model::task::Task;
-use crate::model::Due;
+use crate::id::{ProjectId, SectionId, TaskId};
+use crate::parse::{parse_date, parse_quick_add, Vocabulary};
+use crate::project::Project;
+use crate::query::Query;
+use crate::search::search;
+use crate::store::Store;
+use crate::task::Task;
+use crate::Due;
 
 pub use command::{parse, Change, Command};
 pub use view::Response;

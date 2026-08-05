@@ -164,9 +164,9 @@ fn local_instant<Tz: TimeZone>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::due::Due;
-    use crate::model::id::ProjectId;
-    use crate::model::task::{Reminder, Task};
+    use crate::due::Due;
+    use crate::id::ProjectId;
+    use crate::task::{Reminder, Task};
     use chrono::{FixedOffset, NaiveTime};
 
     /// UTC, so the arithmetic in the tests is the arithmetic in the code.
@@ -356,9 +356,8 @@ mod tests {
         let mut store = store();
         let id = with_reminder(&mut store, 30);
         store.task_mut(&id).unwrap().due = Some(
-            Due::at(date(2026, 7, 31), NaiveTime::from_hms_opt(9, 0, 0).unwrap()).repeating(
-                crate::model::Recurrence::every(1, crate::model::recurrence::Unit::Day),
-            ),
+            Due::at(date(2026, 7, 31), NaiveTime::from_hms_opt(9, 0, 0).unwrap())
+                .repeating(crate::Recurrence::every(1, crate::recurrence::Unit::Day)),
         );
 
         let mut schedule = Schedule::new();

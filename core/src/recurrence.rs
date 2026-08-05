@@ -181,7 +181,7 @@ impl Recurrence {
     /// The rule written back out in the language it is typed in.
     ///
     /// The output is always re-parseable by
-    /// [`parse_recurrence`](crate::model::parse::parse_recurrence) into an
+    /// [`parse_recurrence`](crate::parse::parse_recurrence) into an
     /// equal rule, and there is a test that says so. That is what lets the
     /// editor prefill its box with the current rule: what you are shown is
     /// what you would have typed, so editing a repeat is editing a phrase
@@ -575,7 +575,7 @@ mod tests {
 
         for rule in rules {
             let phrase = rule.describe();
-            let parsed = crate::model::parse::parse_recurrence(&phrase, date(2026, 7, 30));
+            let parsed = crate::parse::parse_recurrence(&phrase, date(2026, 7, 30));
             assert_eq!(
                 parsed.as_ref(),
                 Some(&rule),

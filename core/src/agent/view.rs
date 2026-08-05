@@ -18,11 +18,11 @@
 use serde::Serialize;
 
 use super::help::Verb;
-use crate::model::id::TaskId;
-use crate::model::search::Hit;
-use crate::model::store::Store;
-use crate::model::task::{Completion, Reminder, Task, Trigger};
-use crate::model::{Label, Project, SavedFilter};
+use crate::id::TaskId;
+use crate::search::Hit;
+use crate::store::Store;
+use crate::task::{Completion, Reminder, Task, Trigger};
+use crate::{Label, Project, SavedFilter};
 use chrono::NaiveDate;
 
 /// A task, with every id it holds resolved to a name.
@@ -416,7 +416,7 @@ impl RemovedView {
 /// Not an RFC 3339 instant. A due date is a date in the user's own day, and
 /// rendering "Friday" as `2026-08-07T00:00:00Z` would invent a midnight the
 /// user never asked for and move it across a timezone besides.
-pub fn due_phrase(due: &crate::model::Due) -> String {
+pub fn due_phrase(due: &crate::Due) -> String {
     match due.time {
         Some(time) => format!("{} {}", due.date, time.format("%H:%M")),
         None => due.date.to_string(),
@@ -441,11 +441,11 @@ fn is_false(value: &bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::color::Color;
-    use crate::model::id::ProjectId;
-    use crate::model::project::Section;
-    use crate::model::recurrence::{Recurrence, Unit};
-    use crate::model::Due;
+    use crate::color::Color;
+    use crate::id::ProjectId;
+    use crate::project::Section;
+    use crate::recurrence::{Recurrence, Unit};
+    use crate::Due;
     use chrono::{DateTime, Utc};
 
     fn today() -> NaiveDate {

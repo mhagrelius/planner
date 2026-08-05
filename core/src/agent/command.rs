@@ -15,7 +15,7 @@
 
 use super::help;
 use super::{AgentError, ErrorKind};
-use crate::model::priority::Priority;
+use crate::priority::Priority;
 
 /// How many results a list or search returns when the caller does not say.
 ///

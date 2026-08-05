@@ -6,10 +6,10 @@
 //! has still broken the caller, and only a test at this level notices.
 
 use super::*;
-use crate::model::color::Color;
-use crate::model::project::Section;
-use crate::model::store::SCHEMA_VERSION;
-use crate::model::{Priority, Task};
+use crate::color::Color;
+use crate::project::Section;
+use crate::store::SCHEMA_VERSION;
+use crate::{Priority, Task};
 use serde_json::Value;
 use tempfile::TempDir;
 

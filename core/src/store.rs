@@ -982,8 +982,8 @@ fn quarantine(path: &Path, reason: &str) -> LoadOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::due::Due;
-    use crate::model::recurrence::{Recurrence, Unit};
+    use crate::due::Due;
+    use crate::recurrence::{Recurrence, Unit};
     use tempfile::TempDir;
 
     fn instant(y: i32, m: u32, d: u32) -> DateTime<Utc> {
@@ -1623,8 +1623,7 @@ mod tests {
     // --- quick add ------------------------------------------------------
 
     fn quick_add(store: &mut Store, line: &str) -> TaskId {
-        let parsed =
-            crate::model::parse::parse_quick_add(line, date(2026, 7, 30), &store.vocabulary());
+        let parsed = crate::parse::parse_quick_add(line, date(2026, 7, 30), &store.vocabulary());
         store.add_from_quick_add(&parsed, &ProjectId::inbox(), None, instant(2026, 7, 30))
     }
 
@@ -1643,7 +1642,7 @@ mod tests {
         assert_eq!(task.content, "Email Sam");
         assert_eq!(task.project_id, project);
         assert!(task.section_id.is_some());
-        assert_eq!(task.priority, crate::model::Priority::P2);
+        assert_eq!(task.priority, crate::Priority::P2);
         assert_eq!(task.due.as_ref().unwrap().date, date(2026, 7, 31));
         assert_eq!(task.labels.len(), 1);
         assert_eq!(task.reminders.len(), 1);
@@ -1677,11 +1676,8 @@ mod tests {
     fn a_task_lands_in_the_default_project_when_the_line_does_not_say() {
         let (_dir, mut store) = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        let parsed = crate::model::parse::parse_quick_add(
-            "Just a task",
-            date(2026, 7, 30),
-            &store.vocabulary(),
-        );
+        let parsed =
+            crate::parse::parse_quick_add("Just a task", date(2026, 7, 30), &store.vocabulary());
 
         let id = store.add_from_quick_add(&parsed, &project, None, instant(2026, 7, 30));
         assert_eq!(store.task(&id).unwrap().project_id, project);
@@ -1694,7 +1690,7 @@ mod tests {
         store.remove_project(&project);
 
         let parsed =
-            crate::model::parse::parse_quick_add("Orphan", date(2026, 7, 30), &store.vocabulary());
+            crate::parse::parse_quick_add("Orphan", date(2026, 7, 30), &store.vocabulary());
         let id = store.add_from_quick_add(&parsed, &project, None, instant(2026, 7, 30));
         assert!(store.task(&id).unwrap().project_id.is_inbox());
     }
@@ -1710,7 +1706,7 @@ mod tests {
         let home = store.add_project(Project::new("Home", Color::Green));
 
         // Typed from inside Work's Admin section, but naming another project.
-        let parsed = crate::model::parse::parse_quick_add(
+        let parsed = crate::parse::parse_quick_add(
             "Mow the lawn #Home",
             date(2026, 7, 30),
             &store.vocabulary(),

@@ -173,9 +173,9 @@ pub fn search(store: &Store, query: &str, limit: usize) -> Vec<Hit> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::color::Color;
-    use crate::model::project::Project;
-    use crate::model::task::Task;
+    use crate::color::Color;
+    use crate::project::Project;
+    use crate::task::Task;
     use chrono::{DateTime, Utc};
 
     fn now() -> DateTime<Utc> {
