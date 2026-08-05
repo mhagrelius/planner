@@ -15,8 +15,22 @@ set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 REGISTRY="${PLANNER_REGISTRY:-nas.example.ts.net:5050}"
-TAG="${PLANNER_TAG:-$(date +%Y-%m-%d)}"
+
+# The date says when, the commit says what. A date alone cannot answer "which
+# commit is running on the NAS", which is the question actually asked when
+# something is behaving oddly — and two builds in one day made it unanswerable
+# rather than merely awkward.
+TAG="${PLANNER_TAG:-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)}"
 IMAGE="$REGISTRY/planner-server:$TAG"
+
+# A tag naming a commit has to mean it. Untracked files are fine — CLAUDE.md
+# and a local .env live beside this — but a tracked change that is not in the
+# commit would make the tag a lie.
+if ! git diff-index --quiet HEAD --; then
+    echo "the working tree has uncommitted changes, so $TAG would not describe" >&2
+    echo "what is in the image. Commit them, or set PLANNER_TAG to say so." >&2
+    exit 1
+fi
 
 echo "==> ./test.sh"
 ./test.sh
