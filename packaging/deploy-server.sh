@@ -46,10 +46,16 @@ podman build --format docker -f server/Containerfile -t "$IMAGE" .
 # the binary runs, reads its configuration and refuses what it should — without
 # needing the real credentials in a build script.
 echo "==> smoke test"
-if podman run --rm -e PLANNER_TOKEN=short "$IMAGE" 2>&1 | grep -q "at least"; then
+# Captured before it is searched, not piped into grep. Refusing is the correct
+# behaviour *and* a non-zero exit, and under `pipefail` that non-zero would
+# fail the pipeline — so piping made a passing smoke test look like a failing
+# one, which is the worst direction for a check to be wrong in.
+refusal="$(podman run --rm -e PLANNER_TOKEN=short "$IMAGE" 2>&1 || true)"
+if grep -q "at least" <<<"$refusal"; then
     echo "    refuses a short token"
 else
-    echo "    the image did not refuse a short token" >&2
+    echo "    the image did not refuse a short token, it said:" >&2
+    echo "$refusal" >&2
     exit 1
 fi
 
