@@ -1,0 +1,53 @@
+# planner-server.
+#
+# Built from the workspace root, because planner-server depends on
+# planner-core by path:
+#
+#     podman build -f server/Containerfile -t planner-server .
+#
+# See `.dockerignore` at the root — without it this ships `target/`.
+
+FROM docker.io/library/rust:1-slim-bookworm AS build
+
+WORKDIR /build
+
+# An explicit list rather than the whole context. `src/` comes along because
+# the workspace's root manifest declares the GTK shell and cargo will not parse
+# a manifest whose lib and bin paths are missing — it is never compiled, since
+# only -p planner-server is built.
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY core ./core
+COPY server ./server
+
+# --locked so the image is built from the versions that were tested, and fails
+# loudly if the lockfile and the manifests have drifted rather than quietly
+# resolving something newer.
+RUN cargo build --release --locked -p planner-server
+
+FROM docker.io/library/debian:bookworm-slim
+
+# libssl and ca-certificates are not needed: this speaks plain HTTP to the
+# tailnet and unencrypted Postgres over the NAS's own docker network. Nothing
+# here opens a TLS connection, so nothing here carries a TLS stack.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libgcc-s1 \
+ && rm -rf /var/lib/apt/lists/*
+
+# A non-root user, which is right on an ordinary Docker host. On the Synology
+# it is overridden back to root in the compose file — /volume1 carries ACLs
+# that beat POSIX ownership, and a container uid that is not a DSM user cannot
+# be granted write access through them. The comment there has the whole story.
+RUN useradd --system --uid 10001 --no-create-home planner
+
+COPY --from=build /build/target/release/planner-server /usr/local/bin/planner-server
+
+USER 10001:10001
+EXPOSE 8083
+
+# The image has no curl and no wget, and a healthcheck that needed the bearer
+# token would mean handing the secret to Docker too. So the binary asks itself.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/usr/local/bin/planner-server", "--health"]
+
+ENTRYPOINT ["/usr/local/bin/planner-server"]

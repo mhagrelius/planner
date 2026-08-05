@@ -1,0 +1,80 @@
+# planner-server, for Synology Container Manager.
+#
+# Container Manager → Project → Create, point it at the folder holding this
+# file and the `.env` beside it. See server/README.md for the whole path.
+#
+# **Do not type this into Container Manager's compose editor.** It carries the
+# previous line's indentation onto the next one and adds what you type to it,
+# so six lines in everything is nested under everything else. Upload the file.
+# The `YAML Configurations` tab on an existing project is read-only.
+#
+# Values come from `.env` in the same folder. Nothing secret is in this file,
+# which is why this one is in git and that one is not.
+
+services:
+  planner-server:
+    image: ${PLANNER_SERVER_IMAGE:?set PLANNER_SERVER_IMAGE in .env to the tag deploy-server.sh pushed}
+    container_name: planner-server
+    restart: unless-stopped
+
+    # Root, and this was arrived at the hard way on this NAS.
+    #
+    # The image runs as uid 10001, which is right on an ordinary Docker host
+    # where a chown on the mount is all it takes. It does not work on a
+    # Synology: /volume1 carries Synology's own ACLs, which override POSIX
+    # ownership, and a container uid that is not a DSM user cannot be granted
+    # access through them. The chown reports success and the writes still fail.
+    #
+    # This particular container writes nothing to disk — everything it holds is
+    # in Postgres — so the setting matters less here than it does for a service
+    # with a volume. It is kept for the same reason every other container on
+    # this NAS has it: so that adding a mount later does not resurrect an
+    # evening of debugging.
+    user: "0:0"
+
+    # The Postgres instance is a separate Container Manager project, so this
+    # reaches it over the host rather than a shared compose network.
+    network_mode: bridge
+
+    environment:
+      # No defaults on purpose: compose refuses to start without these rather
+      # than inventing them, which is the same posture the binary takes.
+      PLANNER_TOKEN: ${PLANNER_TOKEN:?set PLANNER_TOKEN in .env}
+      PLANNER_ADDR: 0.0.0.0:8083
+      PLANNER_DB_HOST: ${PLANNER_DB_HOST:?set PLANNER_DB_HOST in .env}
+      PLANNER_DB_PORT: ${PLANNER_DB_PORT:-5433}
+      PLANNER_DB_NAME: ${PLANNER_DB_NAME:-planner}
+      PLANNER_DB_USER: ${PLANNER_DB_USER:-planner}
+      PLANNER_DB_PASSWORD: ${PLANNER_DB_PASSWORD:?set PLANNER_DB_PASSWORD in .env}
+
+    ports:
+      # PLANNER_BIND decides who can reach this. Unset means every interface,
+      # which on a home LAN means every device on it — and the token then
+      # crosses that LAN in clear text, because this speaks plain HTTP.
+      #
+      # Set PLANNER_BIND to the NAS's Tailscale address in .env to make it
+      # reachable only over the tailnet, where WireGuard is doing the
+      # encrypting. That is the arrangement this was built for.
+      - "${PLANNER_BIND:-0.0.0.0}:8083:8083"
+
+    # No volume at all: the records live in Postgres. Nothing this process
+    # writes needs to survive it, so nothing can be lost by taking the
+    # filesystem away.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+
+    healthcheck:
+      # The image carries no curl, so the binary asks itself. /health needs no
+      # token, which is what lets this work without handing the secret to
+      # Docker as well.
+      test: ["CMD", "/usr/local/bin/planner-server", "--health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+    # No `logging:` block. Naming a driver here makes Container Manager's Log
+    # tab show nothing at all, and that tab is unreliable enough already —
+    # when a container will not start, go to `sudo docker logs` over SSH
+    # rather than believing a blank panel.
