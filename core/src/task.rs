@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use super::due::Due;
 use super::id::{LabelId, ProjectId, ReminderId, SectionId, TaskId};
+use super::order::Order;
 use super::priority::Priority;
 
 /// When a reminder fires.
@@ -90,8 +91,11 @@ pub struct Task {
     pub added_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     /// Position within its project or section under manual sorting.
+    ///
+    /// A key rather than an index, so that moving this task rewrites this
+    /// record and no other. See [`crate::order`] for why that matters.
     #[serde(default)]
-    pub order: i32,
+    pub order: Order,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -134,7 +138,7 @@ impl Task {
             completed_at: None,
             added_at: now,
             updated_at: now,
-            order: 0,
+            order: Order::start(),
         }
     }
 
@@ -337,11 +341,10 @@ mod tests {
     fn an_empty_task_serialises_without_a_field_per_unset_option() {
         let mut task = task();
         task.id = TaskId::from_raw("t1");
-        task.order = 0;
         let json = serde_json::to_string(&task).unwrap();
         assert_eq!(
             json,
-            r#"{"id":"t1","content":"Water the plants","project_id":"inbox","priority":"P4","added_at":"2026-07-01T12:00:00Z","updated_at":"2026-07-01T12:00:00Z","order":0}"#
+            r#"{"id":"t1","content":"Water the plants","project_id":"inbox","priority":"P4","added_at":"2026-07-01T12:00:00Z","updated_at":"2026-07-01T12:00:00Z","order":"i"}"#
         );
     }
 

@@ -35,11 +35,18 @@ use serde::{Deserialize, Serialize};
 
 use super::color::{self, Color};
 use super::id::{FilterId, LabelId, ProjectId, SectionId, TaskId};
+use super::order::Order;
 use super::project::{Label, Project, SavedFilter, Section};
 use super::task::{Completion, Task};
 
 /// The schema version written into every file.
-pub const SCHEMA_VERSION: u32 = 1;
+///
+/// v2 replaced integer positions with ordering keys. A v1 file still opens —
+/// [`crate::order::Order`] reads the old numbers and places them — and is
+/// rewritten as v2 on the next save. A machine still running a v1 build then
+/// finds a file it will not overwrite, which is the intended outcome: it
+/// degrades to read-only rather than truncating keys it cannot represent.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// The on-disk document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -537,16 +544,17 @@ impl Store {
 
     /// Add a task, placing it at the end of its project or section.
     pub fn add_task(&mut self, mut task: Task) -> TaskId {
-        task.order = self
+        let last = self
             .document
             .tasks
             .iter()
             .filter(|existing| {
                 existing.project_id == task.project_id && existing.section_id == task.section_id
             })
-            .map(|existing| existing.order)
+            .map(|existing| &existing.order)
             .max()
-            .map_or(0, |max| max + 1);
+            .cloned();
+        task.order = Order::between(last.as_ref(), None);
         let id = task.id.clone();
         self.document.tasks.push(task);
         id
@@ -670,10 +678,14 @@ impl Store {
                     && task.section_id.as_ref() == section
             })
             .collect();
+        // Two machines dropping a task into the same gap can mint the same
+        // key. Falling through to the id keeps the list in the same order on
+        // both of them, which matters more than which one comes first.
         tasks.sort_by(|a, b| {
             a.order
                 .cmp(&b.order)
                 .then_with(|| a.added_at.cmp(&b.added_at))
+                .then_with(|| a.id.cmp(&b.id))
         });
         tasks
     }
@@ -697,9 +709,9 @@ impl Store {
         index: usize,
         now: DateTime<Utc>,
     ) -> bool {
-        let Some(task) = self.task(id) else {
+        if self.task(id).is_none() {
             return false;
-        };
+        }
         if self.project(project).is_none() {
             return false;
         }
@@ -712,24 +724,24 @@ impl Store {
             }
         }
 
-        let previous_project = task.project_id.clone();
-        let previous_section = task.section_id.clone();
-
         // A dragged task takes its subtasks with it: a child left behind in
         // another project is invisible under its parent and counted in a
         // project it is not shown in.
         let family = self.task_and_descendants(id);
 
-        let order: Vec<TaskId> = self
+        // The neighbours the task is being dropped between, in the destination
+        // list as it stands without it.
+        let neighbours: Vec<Order> = self
             .tasks_in(project, section)
             .into_iter()
-            .map(|task| task.id.clone())
-            .filter(|other| other != id)
+            .filter(|other| other.id != *id)
+            .map(|task| task.order.clone())
             .collect();
 
-        let index = index.min(order.len());
-        let mut order = order;
-        order.insert(index, id.clone());
+        let index = index.min(neighbours.len());
+        let before = index.checked_sub(1).and_then(|i| neighbours.get(i));
+        let after = neighbours.get(index);
+        let landed = Order::between(before, after);
 
         for member in &family {
             if let Some(task) = self.task_mut(member) {
@@ -738,35 +750,17 @@ impl Store {
                 // in a section of their own to begin with.
                 if member == id {
                     task.section_id = section.cloned();
+                    task.order = landed.clone();
                 }
                 task.touch(now);
             }
         }
 
-        self.renumber(&order, now);
-        // The list it came from now has a gap in it.
-        if previous_project != *project || previous_section.as_ref() != section {
-            let vacated: Vec<TaskId> = self
-                .tasks_in(&previous_project, previous_section.as_ref())
-                .into_iter()
-                .map(|task| task.id.clone())
-                .collect();
-            self.renumber(&vacated, now);
-        }
+        // Nothing to do about the list it came from. A key says where a task
+        // sits relative to its neighbours, not how many there are, so removing
+        // one leaves the rest correct — which is the point: one drag is one
+        // changed record, and a machine that was switched off receives one.
         true
-    }
-
-    /// Write sequential `order` values, leaving `updated_at` alone.
-    ///
-    /// Renumbering is bookkeeping, not an edit: bumping `updated_at` on every
-    /// task in a list because a neighbour moved would make "recently changed"
-    /// meaningless and, once there is a sync source, would send the whole list.
-    fn renumber(&mut self, ids: &[TaskId], _now: DateTime<Utc>) {
-        for (position, id) in ids.iter().enumerate() {
-            if let Some(task) = self.task_mut(id) {
-                task.order = position as i32;
-            }
-        }
     }
 
     /// Rename a section.
@@ -820,7 +814,7 @@ impl Store {
             .iter()
             .filter(|t| t.parent_id.as_ref() == Some(parent))
             .collect();
-        tasks.sort_by_key(|t| t.order);
+        tasks.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.id.cmp(&b.id)));
         tasks
     }
 
@@ -1089,6 +1083,51 @@ mod tests {
         assert!(store.is_read_only());
         assert!(matches!(store.save(), Err(SaveError::Newer { .. })));
         assert_eq!(fs::read_to_string(&path).unwrap(), future);
+    }
+
+    /// The upgrade that has to work on a file somebody is actually using.
+    #[test]
+    fn a_v1_file_opens_with_its_hand_sorted_list_still_in_order() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("planner.json");
+
+        // Exactly what v1 wrote: positions as numbers, deliberately stored out
+        // of order in the array so that only `order` can be putting them right.
+        fs::write(
+            &path,
+            r#"{"version":1,"projects":[],"labels":[],"tasks":[
+                {"id":"c","content":"Third","project_id":"inbox","added_at":"2026-07-01T12:00:00Z","updated_at":"2026-07-01T12:00:00Z","order":2},
+                {"id":"a","content":"First","project_id":"inbox","added_at":"2026-07-01T12:00:00Z","updated_at":"2026-07-01T12:00:00Z","order":0},
+                {"id":"b","content":"Second","project_id":"inbox","added_at":"2026-07-01T12:00:00Z","updated_at":"2026-07-01T12:00:00Z","order":1}
+            ]}"#,
+        )
+        .unwrap();
+
+        let (mut store, outcome) = Store::open_at(&path);
+
+        assert_eq!(outcome, LoadOutcome::Loaded, "a v1 file is not corrupt");
+        assert_eq!(
+            order_of(&store, &ProjectId::inbox(), None),
+            vec!["First", "Second", "Third"]
+        );
+
+        // And a task added afterwards goes to the end rather than into the
+        // middle of the upgraded list.
+        let added = store.add_task(Task::new(ProjectId::inbox(), "Fourth", instant(2026, 8, 1)));
+        assert_eq!(
+            order_of(&store, &ProjectId::inbox(), None),
+            vec!["First", "Second", "Third", "Fourth"]
+        );
+
+        // Saving writes v2, and reopening finds the same list.
+        store.save().expect("save");
+        let (reopened, outcome) = Store::open_at(&path);
+        assert_eq!(outcome, LoadOutcome::Loaded);
+        assert_eq!(
+            order_of(&reopened, &ProjectId::inbox(), None),
+            vec!["First", "Second", "Third", "Fourth"]
+        );
+        assert!(reopened.task(&added).is_some());
     }
 
     #[test]
@@ -1376,10 +1415,12 @@ mod tests {
         let second = task(&mut store, "Inbox two");
         let elsewhere = store.add_task(Task::new(project, "Work one", instant(2026, 7, 30)));
 
-        assert_eq!(store.task(&first).unwrap().order, 0);
-        assert_eq!(store.task(&second).unwrap().order, 1);
-        // A different project counts from zero again.
-        assert_eq!(store.task(&elsewhere).unwrap().order, 0);
+        let first_key = store.task(&first).unwrap().order.clone();
+        let second_key = store.task(&second).unwrap().order.clone();
+        assert!(first_key < second_key, "{first_key} < {second_key}");
+        // A different project starts its own list rather than continuing this
+        // one, so the same key in two projects means nothing.
+        assert_eq!(store.task(&elsewhere).unwrap().order, first_key);
     }
 
     // --- ordering and moving --------------------------------------------
@@ -1467,13 +1508,60 @@ mod tests {
 
         assert_eq!(order_of(&store, &project, None), vec!["One", "Three"]);
         assert_eq!(order_of(&store, &project, Some(&doing)), vec!["Two"]);
-        // And the list left behind is renumbered rather than left with a hole.
-        let remaining: Vec<i32> = store
+
+        // The list left behind is *not* rewritten. A key says where a task
+        // sits relative to its neighbours rather than how many there are, so
+        // taking one out leaves the rest already correct — and taking a drag
+        // from one changed record to three is exactly what sync cannot afford.
+        let remaining: Vec<Order> = store
             .tasks_in(&project, None)
             .into_iter()
-            .map(|task| task.order)
+            .map(|task| task.order.clone())
             .collect();
-        assert_eq!(remaining, vec![0, 1]);
+        let mut sorted = remaining.clone();
+        sorted.sort();
+        assert_eq!(remaining, sorted);
+    }
+
+    /// The reason `order` is a key and not a position.
+    #[test]
+    fn moving_a_task_rewrites_that_task_and_no_other() {
+        let (_dir, mut store) = store();
+        let project = store.add_project(Project::new("Work", Color::Blue));
+        let ids: Vec<TaskId> = ["One", "Two", "Three", "Four"]
+            .iter()
+            .map(|name| store.add_task(Task::new(project.clone(), *name, instant(2026, 7, 30))))
+            .collect();
+
+        let before: Vec<(Order, DateTime<Utc>)> = ids
+            .iter()
+            .map(|id| {
+                let task = store.task(id).unwrap();
+                (task.order.clone(), task.updated_at)
+            })
+            .collect();
+
+        // Drag the last task to the top.
+        assert!(store.move_task(&ids[3], &project, None, 0, instant(2026, 7, 31)));
+        assert_eq!(
+            order_of(&store, &project, None),
+            vec!["Four", "One", "Two", "Three"]
+        );
+
+        let touched: Vec<&str> = ids
+            .iter()
+            .zip(&before)
+            .filter(|(id, (order, updated_at))| {
+                let task = store.task(id).unwrap();
+                task.order != *order || task.updated_at != *updated_at
+            })
+            .map(|(id, _)| store.task(id).unwrap().content.as_str())
+            .collect();
+
+        // Under sync, a drag that rewrote the whole list would send the whole
+        // list — and two machines dragging within it would merge into an order
+        // neither of them arranged.
+        assert_eq!(touched, vec!["Four"]);
     }
 
     #[test]

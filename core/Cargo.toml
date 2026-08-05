@@ -17,13 +17,15 @@ serde_json = "1"
 # weekday math, and DST transitions in the local zone. Everything else here is
 # plain std.
 #
-# No `clock` feature, deliberately. Nothing in this crate reads the clock —
-# every function whose answer depends on the date takes `now` or `today` as an
-# argument — and leaving the feature off is what keeps that true by
-# construction rather than by discipline. The shell enables it for
-# `ui::today()`, which is the one place that asks.
+# `clock` is on for one line: `store::quarantine` stamps the name of the file
+# it sets a corrupt document aside as. Nothing else here asks what time it is,
+# and nothing here ever asks in order to decide an *answer* — every function
+# whose result depends on the date takes `now` or `today` as an argument, which
+# is the difference between a test and a bug report filed next February.
+# Turning the feature off to check found exactly that one caller.
 chrono = { version = "0.4", default-features = false, features = [
     "std",
+    "clock",
     "serde",
 ] }
 
