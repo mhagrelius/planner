@@ -2,3 +2,6 @@
 /dist
 /.flatpak-build
 /packaging/flatpak/cargo-sources.json
+
+# Deployment secrets and the database password.
+server/.env
