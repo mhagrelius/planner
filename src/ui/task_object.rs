@@ -73,6 +73,10 @@ mod imp {
         pub subtasks: RefCell<String>,
         #[property(get, set)]
         pub has_subtasks: Cell<bool>,
+
+        /// Whether anything at all belongs on the row's second line.
+        #[property(get, set)]
+        pub has_details: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -166,6 +170,18 @@ impl TaskObject {
         } else {
             format!("{done} of {}", subtasks.len())
         });
+
+        // Set last, from the properties above: an empty second line is not the
+        // same as no second line. A box with no visible children still costs
+        // the spacing above it, which is enough to push the title off the
+        // checkbox's centre on exactly the rows that have nothing to show.
+        self.set_has_details(
+            self.has_due()
+                || self.recurring()
+                || self.has_deadline()
+                || self.has_labels()
+                || self.has_subtasks(),
+        );
     }
 
     /// The task this stands for.

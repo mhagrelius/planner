@@ -89,6 +89,20 @@
 
 .task-row {
     padding: 8px 6px;
+    min-height: 35px;
+}
+
+/* Adwaita gives the checkbutton 3px of padding around its 20px indicator, so a
+ * 26px control has to line up against an 18px title. Aligned to the top of the
+ * row that padding pushes the indicator 4px below the title's line, which is
+ * visible as soon as one row has a second line and its neighbour does not.
+ *
+ * The padding overhangs instead: the control still asks for 26px of click
+ * target, but only the indicator's 20px counts towards the row, so the
+ * indicator and the title's line box share a centre in every row. */
+.task-row checkbutton {
+    margin-top: -3px;
+    margin-bottom: -3px;
 }
 
 .task-row .task-title {

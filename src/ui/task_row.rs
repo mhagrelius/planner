@@ -25,6 +25,7 @@ mod imp {
     pub struct TaskRow {
         pub check: RefCell<Option<gtk::CheckButton>>,
         pub title: RefCell<Option<gtk::Label>>,
+        pub details: RefCell<Option<gtk::Box>>,
         pub due: RefCell<Option<gtk::Label>>,
         pub deadline: RefCell<Option<gtk::Label>>,
         pub recurring: RefCell<Option<gtk::Image>>,
@@ -85,13 +86,25 @@ impl TaskRow {
     pub fn new() -> Self {
         glib::Object::builder()
             .property("orientation", gtk::Orientation::Horizontal)
-            .property("spacing", 10)
             .build()
     }
 
     fn build(&self) {
         let imp = self.imp();
         self.add_css_class("task-row");
+
+        // The checkbox and the body are centred together, as one block, rather
+        // than each in its own right. Rows are held to a minimum height so the
+        // list keeps an even rhythm past tasks with nothing on their second
+        // line, and centring the two separately would spend that slack twice:
+        // the title would drift down the row while the checkbox stayed put.
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(10)
+            .hexpand(true)
+            .valign(gtk::Align::Center)
+            .build();
+        self.append(&content);
 
         let check = gtk::CheckButton::builder()
             .valign(gtk::Align::Start)
@@ -101,7 +114,7 @@ impl TaskRow {
             self,
             move |check| row.report_toggle(check.is_active())
         ));
-        self.append(&check);
+        content.append(&check);
 
         let body = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -118,7 +131,8 @@ impl TaskRow {
         body.append(&title);
 
         // The second line only exists when there is something on it, so a
-        // plain task stays one line tall.
+        // plain task stays one line tall. Hidden rather than merely empty:
+        // an empty box still costs the spacing above it.
         let details = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .spacing(8)
@@ -157,12 +171,13 @@ impl TaskRow {
         details.append(&labels);
 
         body.append(&details);
-        self.append(&body);
+        content.append(&body);
 
         self.install_drag_source();
 
         imp.check.replace(Some(check));
         imp.title.replace(Some(title));
+        imp.details.replace(Some(details));
         imp.due.replace(Some(due));
         imp.deadline.replace(Some(deadline));
         imp.recurring.replace(Some(recurring));
@@ -251,6 +266,7 @@ impl TaskRow {
 
         let check = imp.check.borrow().clone().expect("built");
         let title = imp.title.borrow().clone().expect("built");
+        let details = imp.details.borrow().clone().expect("built");
         let due = imp.due.borrow().clone().expect("built");
         let deadline = imp.deadline.borrow().clone().expect("built");
         let recurring = imp.recurring.borrow().clone().expect("built");
@@ -262,6 +278,9 @@ impl TaskRow {
                 .sync_create()
                 .build(),
             item.bind_property("checked", &check, "active")
+                .sync_create()
+                .build(),
+            item.bind_property("has-details", &details, "visible")
                 .sync_create()
                 .build(),
             item.bind_property("due-label", &due, "label")
