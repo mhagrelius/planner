@@ -32,29 +32,44 @@ services:
     # evening of debugging.
     user: "0:0"
 
-    # The Postgres instance is a separate Container Manager project, so this
-    # reaches it over the host rather than a shared compose network.
-    network_mode: bridge
+    # Postgres is its own Container Manager project, so this joins that
+    # project's network rather than going back out through the host. Two
+    # consequences worth knowing: the database is reached at the container
+    # name on its *own* port, 5432, not the 5433 the NAS publishes it on; and
+    # nothing about this path leaves the NAS, so the database password never
+    # crosses the tailnet.
+    networks:
+      - postgres_default
 
     environment:
       # No defaults on purpose: compose refuses to start without these rather
       # than inventing them, which is the same posture the binary takes.
       PLANNER_TOKEN: ${PLANNER_TOKEN:?set PLANNER_TOKEN in .env}
       PLANNER_ADDR: 0.0.0.0:8083
-      PLANNER_DB_HOST: ${PLANNER_DB_HOST:?set PLANNER_DB_HOST in .env}
-      PLANNER_DB_PORT: ${PLANNER_DB_PORT:-5433}
+      PLANNER_DB_HOST: ${PLANNER_DB_HOST:-postgres}
+      PLANNER_DB_PORT: ${PLANNER_DB_PORT:-5432}
       PLANNER_DB_NAME: ${PLANNER_DB_NAME:-planner}
       PLANNER_DB_USER: ${PLANNER_DB_USER:-planner}
       PLANNER_DB_PASSWORD: ${PLANNER_DB_PASSWORD:?set PLANNER_DB_PASSWORD in .env}
 
     ports:
-      # PLANNER_BIND decides who can reach this. Unset means every interface,
-      # which on a home LAN means every device on it — and the token then
-      # crosses that LAN in clear text, because this speaks plain HTTP.
+      # Every interface, which on a home LAN means every device on it — and the
+      # token then crosses that LAN in clear text, because this speaks plain
+      # HTTP.
       #
-      # Set PLANNER_BIND to the NAS's Tailscale address in .env to make it
-      # reachable only over the tailnet, where WireGuard is doing the
-      # encrypting. That is the arrangement this was built for.
+      # The obvious fix is to bind the NAS's Tailscale address so the traffic
+      # stays inside WireGuard. **It does not work on this NAS, and the failure
+      # is worth writing down:** Tailscale runs there as a DSM package in
+      # userspace mode, so 100.x.y.z is not assigned to any local interface and
+      # Docker refuses the container with
+      #
+      #     Error starting userland proxy: listen tcp4 100.101.102.103:8083:
+      #     bind: cannot assign requested address
+      #
+      # brain-server on the same box is bound the same way for the same reason.
+      # What keeps this acceptable is that nothing is forwarded on the router,
+      # so "every interface" means the LAN and the tailnet and nowhere else.
+      # Set PLANNER_BIND in .env on a host where the tailnet address is real.
       - "${PLANNER_BIND:-0.0.0.0}:8083:8083"
 
     # No volume at all: the records live in Postgres. Nothing this process
@@ -78,3 +93,10 @@ services:
     # tab show nothing at all, and that tab is unreliable enough already —
     # when a container will not start, go to `sudo docker logs` over SSH
     # rather than believing a blank panel.
+
+networks:
+  # Created by the `postgres` project, not by this one. Declaring it external
+  # means compose joins the existing network rather than making a second one
+  # with a similar name and no database on it.
+  postgres_default:
+    external: true

@@ -22,7 +22,11 @@ echo "==> ./test.sh"
 ./test.sh
 
 echo "==> podman build $IMAGE"
-podman build -f server/Containerfile -t "$IMAGE" .
+# --format docker, not podman's OCI default: HEALTHCHECK has no place in the
+# OCI image spec, so an OCI build drops it with a warning that is easy to miss.
+# The compose file declares one too, but an image that cannot say whether it is
+# well is worth avoiding on its own.
+podman build --format docker -f server/Containerfile -t "$IMAGE" .
 
 # Start it with a deliberately broken database so it gets far enough to prove
 # the binary runs, reads its configuration and refuses what it should — without
