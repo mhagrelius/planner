@@ -256,6 +256,55 @@ fn main() {
         a.store.tombstones().len() == b.store.tombstones().len(),
     );
 
+    // --- and a waiting machine is woken rather than polled ----------------
+    //
+    // The part that fails silently if it is wrong: a client that is never
+    // woken still syncs, just on its backstop timer, and every test above
+    // would still pass. So this asserts the wake actually happens — and that
+    // it happens *quickly*, which is the whole point of it existing.
+    {
+        use planner::model::sync::Remote;
+        use std::sync::mpsc;
+
+        // Where the server is now, so the wait has a cursor and does not
+        // return immediately on history.
+        let (_, cursor) = b
+            .remote
+            .wait_for_change(chrono::DateTime::UNIX_EPOCH)
+            .expect("a cursor");
+
+        let (sender, receiver) = mpsc::channel();
+        let waiter = HttpRemote::new(&url, &token).expect("a url");
+        std::thread::spawn(move || {
+            let _ = sender.send(waiter.wait_for_change(cursor));
+        });
+
+        // Give the waiter a moment to actually be parked, then write.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        a.add("Woke you up", at(200));
+        a.sync(at(201));
+
+        // Well inside the server's fifty-second give-up, so arriving at all
+        // means it was the notification rather than the timeout.
+        match receiver.recv_timeout(std::time::Duration::from_secs(10)) {
+            Ok(Ok((changed, _))) => check("a waiting machine is woken by a write", changed),
+            Ok(Err(error)) => {
+                println!("  FAIL a waiting machine is woken by a write: {error}");
+                std::process::exit(1);
+            }
+            Err(_) => {
+                println!("  FAIL a waiting machine is woken by a write: it was not");
+                std::process::exit(1);
+            }
+        }
+
+        b.sync(at(202));
+        check(
+            "and finds the change when it looks",
+            b.titles().contains(&"Woke you up".to_string()),
+        );
+    }
+
     // A record kind the client does not know must not take the pass down.
     check(
         "an unreadable record is skipped rather than fatal",

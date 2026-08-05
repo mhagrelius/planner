@@ -26,12 +26,22 @@ use crate::ui::window::PlannerWindow;
 /// How often the store is flushed if it is dirty.
 const TICK: Duration = Duration::from_secs(2);
 
-/// How often a sync pass runs.
+/// A backstop pass, for when nothing else has triggered one.
 ///
-/// Long, deliberately. Nothing on screen waits for a pass, the other machine is
-/// usually asleep, and a planner is not a chat window — a task typed on the Mac
-/// arriving here within a few minutes is what this is for.
+/// Not the mechanism, just the floor. Incoming changes arrive because the
+/// server holds a request open until there are some, and outgoing ones go as
+/// soon as an edit settles; this only covers the cases neither can see — a
+/// machine that has just woken from suspend holding a dead socket, or a
+/// notification lost while the database was restarting.
 const SYNC_TICK: Duration = Duration::from_secs(180);
+
+/// How long after the last edit before it is pushed.
+///
+/// Long enough that typing a title is one push rather than thirty, short
+/// enough that putting the laptop down and picking up the phone works. The
+/// save tick is two seconds and this deliberately sits just behind it, so what
+/// gets sent is what got written.
+const SYNC_AFTER_EDIT: Duration = Duration::from_secs(3);
 
 /// How many passes must fail before the window says anything.
 ///
@@ -69,6 +79,10 @@ mod imp {
         pub sync_error: RefCell<Option<String>>,
         /// How many passes in a row have failed.
         pub sync_failures: Cell<u32>,
+        /// The cursor the server last handed out, sent back when waiting.
+        pub sync_cursor: Cell<Option<chrono::DateTime<chrono::Utc>>>,
+        /// A pending push, debounced so a burst of typing is one pass.
+        pub sync_soon: RefCell<Option<glib::SourceId>>,
     }
 
     impl Default for PlannerApplication {
@@ -90,6 +104,8 @@ mod imp {
                 syncing: Cell::new(false),
                 sync_error: RefCell::new(None),
                 sync_failures: Cell::new(0),
+                sync_cursor: Cell::new(None),
+                sync_soon: RefCell::new(None),
             }
         }
     }
@@ -318,6 +334,9 @@ impl PlannerApplication {
             change(&mut store)
         };
         self.imp().dirty.set(true);
+        // The one place anything changes is the one place worth telling the
+        // other machines from. Debounced, and a no-op when sync is off.
+        self.sync_after_edit();
         result
     }
 
@@ -496,9 +515,13 @@ impl PlannerApplication {
             })
         };
 
+        // Held across the merge so `mutate` does not read it as a local edit
+        // and push back what just arrived.
+        self.imp().syncing.set(true);
         let now = chrono::Utc::now();
         let (report, base) =
             self.mutate(|store| crate::model::sync::apply(store, incoming, &held, now));
+        self.imp().syncing.set(false);
 
         self.imp().sync_base.replace(base.clone());
         let path = crate::model::sync::default_base_path(
@@ -517,6 +540,111 @@ impl PlannerApplication {
         if !report.is_empty() {
             self.refresh();
         }
+
+        self.wait_for_changes();
+    }
+
+    /// Park a worker on the server until another machine writes.
+    ///
+    /// This is what makes an edit on the Mac show up here in about as long as
+    /// the network takes rather than on the next timer. The request costs a
+    /// socket and a thread; the server answers it when something changes, or
+    /// gives up after fifty seconds and gets asked again.
+    fn wait_for_changes(&self) {
+        let Some((url, token)) = self.imp().sync_target.borrow().clone() else {
+            return;
+        };
+        if self.imp().syncing.get() {
+            return;
+        }
+        self.imp().syncing.set(true);
+
+        // The server's cursor, not one this machine invented: a change that
+        // landed between the pass and this call comes straight back rather
+        // than being waited through.
+        let since = self
+            .imp()
+            .sync_cursor
+            .get()
+            .unwrap_or(chrono::DateTime::UNIX_EPOCH);
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            use crate::model::sync::Remote;
+            let outcome = crate::ui::sync::HttpRemote::new(&url, token)
+                .and_then(|remote| remote.wait_for_change(since));
+            let _ = sender.send(outcome);
+        });
+
+        glib::timeout_add_local(
+            Duration::from_millis(500),
+            glib::clone!(
+                #[weak(rename_to = app)]
+                self,
+                #[upgrade_or]
+                glib::ControlFlow::Break,
+                move || match receiver.try_recv() {
+                    Ok(Ok((changed, cursor))) => {
+                        app.imp().syncing.set(false);
+                        app.imp().sync_cursor.set(Some(cursor));
+                        // Changed: go and get it. Timed out: ask again, which
+                        // a pass does at the end of `finish_sync`.
+                        if changed {
+                            app.sync_now();
+                        } else {
+                            app.wait_for_changes();
+                        }
+                        glib::ControlFlow::Break
+                    }
+                    // The wait failed. Say nothing and leave it to the
+                    // backstop tick — a NAS that went away is exactly what
+                    // that tick is for, and a banner per failed wait would be
+                    // one a minute.
+                    Ok(Err(_)) | Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        app.imp().syncing.set(false);
+                        glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                }
+            ),
+        );
+    }
+
+    /// Something changed here; get it to the other machines.
+    ///
+    /// Debounced rather than immediate: typing a title fires this on every
+    /// keystroke, and thirty passes for one task would be thirty round trips
+    /// to say the same thing.
+    fn sync_after_edit(&self) {
+        if self.imp().sync_target.borrow().is_none() {
+            return;
+        }
+        // Applying a pull goes through `mutate` like everything else. Pushing
+        // back what just arrived would be a round trip to tell the server
+        // something it told us.
+        if self.imp().syncing.get() {
+            return;
+        }
+        // Restart the clock, so a burst of edits is one push at the end of it
+        // rather than one at the start.
+        if let Some(pending) = self.imp().sync_soon.take() {
+            pending.remove();
+        }
+
+        let id = glib::timeout_add_local_once(
+            SYNC_AFTER_EDIT,
+            glib::clone!(
+                #[weak(rename_to = app)]
+                self,
+                move || {
+                    app.imp().sync_soon.replace(None);
+                    // The save tick is two seconds, so by here what is being
+                    // sent is also what is on disk.
+                    app.sync_now();
+                }
+            ),
+        );
+        self.imp().sync_soon.replace(Some(id));
     }
 
     /// A pass failed.

@@ -18,7 +18,8 @@
 pub mod http;
 pub mod records;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use planner_core::tombstone::RecordKind;
@@ -56,6 +57,73 @@ pub struct WriteReport {
     pub stale_ids: Vec<String>,
 }
 
+/// How long a waiting request is held before it is answered anyway.
+///
+/// Long enough that an idle client is not reconnecting constantly, short
+/// enough that no NAT table, proxy or sleeping Wi-Fi radio between here and a
+/// laptop decides a silent connection is a dead one. A client that gets
+/// "nothing changed" simply asks again.
+pub const MAX_WAIT: Duration = Duration::from_secs(50);
+
+/// What a parked request is woken by.
+///
+/// A counter rather than a flag: a change that lands between a client's read
+/// and its wait would set a flag that had already been cleared, and the client
+/// would sleep through it. Comparing counters cannot miss one.
+///
+/// This exists so a waiting request does *not* hold a database connection. One
+/// dedicated connection runs `LISTEN` and bumps this; every waiter blocks on a
+/// condvar, which costs a parked thread and nothing else.
+#[derive(Default)]
+pub struct Changes {
+    seen: Mutex<u64>,
+    signal: Condvar,
+}
+
+impl Changes {
+    /// Something changed. Wake everyone waiting.
+    pub fn announce(&self) {
+        let mut seen = match self.seen.lock() {
+            Ok(seen) => seen,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *seen = seen.wrapping_add(1);
+        self.signal.notify_all();
+    }
+
+    /// The count to compare against later.
+    pub fn mark(&self) -> u64 {
+        match self.seen.lock() {
+            Ok(seen) => *seen,
+            Err(poisoned) => *poisoned.into_inner(),
+        }
+    }
+
+    /// Wait for the count to move past `mark`, or for the time to run out.
+    pub fn wait_past(&self, mark: u64, timeout: Duration) {
+        let seen = match self.seen.lock() {
+            Ok(seen) => seen,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        // The predicate is re-checked on every wake, so a spurious one costs a
+        // loop rather than a missed change.
+        let _ = self
+            .signal
+            .wait_timeout_while(seen, timeout, |seen| *seen == mark);
+    }
+}
+
+/// What a waiting client is told.
+#[derive(Debug, Clone, Serialize)]
+pub struct Changed {
+    /// Whether anything moved. False means the wait simply timed out.
+    pub changed: bool,
+    /// The newest version the server holds. The client sends this back as
+    /// `since` next time, so the cursor is the server's to define and a client
+    /// cannot drift by keeping its own.
+    pub now: DateTime<Utc>,
+}
+
 /// Anything the server needs to answer a request.
 pub struct Server {
     /// One connection behind a lock. This serves one person's three machines
@@ -64,13 +132,15 @@ pub struct Server {
     /// means requests overlap; they queue here, briefly.
     client: Mutex<postgres::Client>,
     token: String,
+    changes: Arc<Changes>,
 }
 
 impl Server {
-    pub fn new(client: postgres::Client, token: String) -> Self {
+    pub fn new(client: postgres::Client, token: String, changes: Arc<Changes>) -> Self {
         Self {
             client: Mutex::new(client),
             token,
+            changes,
         }
     }
 
@@ -92,6 +162,7 @@ impl Server {
 
         match (request.method.as_str(), request.path.as_str()) {
             ("GET", "/snapshot") => self.snapshot(),
+            ("GET", path) if path.starts_with("/changes") => self.changes(path),
             ("POST", "/fetch") => self.fetch(request),
             ("POST", "/records") => self.write(request, false),
             ("POST", "/deletions") => self.write(request, true),
@@ -131,6 +202,73 @@ impl Server {
             .collect();
 
         Response::json(200, &entries)
+    }
+
+    /// Hold the request until something changes, or until `MAX_WAIT`.
+    ///
+    /// This is the whole of "push". A client that has just finished a pass
+    /// asks this and gets nothing back until another machine writes, at which
+    /// point it runs a pass — so a task ticked off on the Mac shows up here in
+    /// about as long as the network takes, rather than on the next timer.
+    ///
+    /// **The mark is taken before the query, not after.** A change landing in
+    /// between would otherwise be committed, missed by the read, and then
+    /// waited straight through — the client would sleep for fifty seconds
+    /// holding a snapshot it already knew was stale.
+    fn changes(&self, path: &str) -> Response {
+        let since = match query_parameter(path, "since") {
+            Some(raw) => match DateTime::parse_from_rfc3339(&raw) {
+                Ok(at) => at.with_timezone(&Utc),
+                Err(error) => return Response::text(400, &format!("bad since: {error}")),
+            },
+            // No cursor means "tell me where you are" — the first call
+            // bootstraps itself and returns at once.
+            None => DateTime::UNIX_EPOCH,
+        };
+
+        let deadline = Instant::now() + MAX_WAIT;
+        loop {
+            let mark = self.changes.mark();
+
+            let looked = {
+                let mut client = match self.client.lock() {
+                    Ok(client) => client,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                // Both answers in one borrow, and the lock is dropped before
+                // anything waits — a parked request must not hold the only
+                // database connection this server has.
+                client
+                    .query_one(records::CHANGED_SINCE, &[&since])
+                    .and_then(|row| {
+                        let changed: bool = row.get(0);
+                        client
+                            .query_one(records::HIGH_WATER, &[])
+                            .map(|row| (changed, row.get::<_, Option<DateTime<Utc>>>(0)))
+                    })
+            };
+
+            let (changed, high_water) = match looked {
+                Ok(looked) => looked,
+                Err(error) => return Response::text(503, &format!("database: {error}")),
+            };
+            let now = high_water.unwrap_or(DateTime::UNIX_EPOCH);
+
+            if changed {
+                return Response::json(200, &Changed { changed: true, now });
+            }
+
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return Response::json(
+                    200,
+                    &Changed {
+                        changed: false,
+                        now,
+                    },
+                );
+            };
+            self.changes.wait_past(mark, remaining);
+        }
     }
 
     /// The bodies of the records a client decided to pull.
@@ -233,11 +371,64 @@ impl Server {
             }
         }
 
+        // Inside the transaction, so a rollback announces nothing: Postgres
+        // holds notifications until commit for exactly this reason.
+        if report.applied > 0 {
+            if let Err(error) = transaction.execute(records::ANNOUNCE, &[]) {
+                return Response::text(503, &format!("database: {error}"));
+            }
+        }
+
         match transaction.commit() {
             Ok(()) => Response::json(200, &report),
             Err(error) => Response::text(503, &format!("database: {error}")),
         }
     }
+}
+
+/// One value out of a query string.
+///
+/// Deliberately tiny: this server has one route with one parameter, and a
+/// general parser would be more code than the thing it parses.
+fn query_parameter(path: &str, name: &str) -> Option<String> {
+    let (_, query) = path.split_once('?')?;
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        (key == name).then(|| percent_decoded(value))
+    })
+}
+
+/// Enough unescaping for an RFC 3339 timestamp, whose only awkward character
+/// is the `+` in an offset.
+fn percent_decoded(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = String::with_capacity(raw.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                match u8::from_str_radix(&raw[index + 1..index + 3], 16) {
+                    Ok(byte) => {
+                        out.push(byte as char);
+                        index += 3;
+                    }
+                    Err(_) => {
+                        out.push('%');
+                        index += 1;
+                    }
+                }
+            }
+            b'+' => {
+                out.push(' ');
+                index += 1;
+            }
+            byte => {
+                out.push(byte as char);
+                index += 1;
+            }
+        }
+    }
+    out
 }
 
 /// Whether a token is long enough to be worth having.
@@ -259,6 +450,69 @@ pub fn check_token(token: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cursor_is_read_out_of_the_query_string() {
+        assert_eq!(
+            query_parameter("/changes?since=2026-08-05T12:00:00Z", "since").as_deref(),
+            Some("2026-08-05T12:00:00Z")
+        );
+    }
+
+    #[test]
+    fn no_cursor_is_none_rather_than_an_empty_string() {
+        // None bootstraps the client; an empty string would fail to parse and
+        // turn a first call into an error.
+        assert_eq!(query_parameter("/changes", "since"), None);
+        assert_eq!(query_parameter("/changes?other=1", "since"), None);
+    }
+
+    #[test]
+    fn an_escaped_offset_survives_the_trip() {
+        // The one character that actually bites: `+` in `+01:00` is a space in
+        // a query string, so a client sends it escaped.
+        assert_eq!(
+            query_parameter("/changes?since=2026-08-05T12%3A00%3A00%2B01%3A00", "since").as_deref(),
+            Some("2026-08-05T12:00:00+01:00")
+        );
+    }
+
+    #[test]
+    fn a_waiter_is_woken_by_an_announcement() {
+        use std::sync::Arc;
+
+        let changes = Arc::new(Changes::default());
+        let mark = changes.mark();
+
+        let waker = Arc::clone(&changes);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            waker.announce();
+        });
+
+        // Far longer than the wake needs, so finishing early is the wake and
+        // not the timeout.
+        let started = Instant::now();
+        changes.wait_past(mark, Duration::from_secs(5));
+        assert!(started.elapsed() < Duration::from_secs(4), "it timed out");
+        assert_ne!(changes.mark(), mark);
+    }
+
+    #[test]
+    fn a_change_that_lands_before_the_wait_does_not_get_slept_through() {
+        // The race the counter exists for: a flag set and cleared between the
+        // read and the wait would leave the client asleep on stale data.
+        let changes = Changes::default();
+        let mark = changes.mark();
+        changes.announce();
+
+        let started = Instant::now();
+        changes.wait_past(mark, Duration::from_secs(5));
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "it waited for a change it had already been told about"
+        );
+    }
 
     #[test]
     fn a_short_token_is_refused_at_startup() {

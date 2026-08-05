@@ -3,6 +3,7 @@
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
+use std::time::Duration;
 
 use planner_server::http::{self, Response};
 use planner_server::{check_token, Server};
@@ -62,6 +63,12 @@ fn run() -> Result<(), String> {
     let client = postgres::Client::connect(&settings.database, postgres::NoTls)
         .map_err(|error| format!("could not reach the database: {error}"))?;
 
+    let changes = Arc::new(planner_server::Changes::default());
+    // A second connection, dedicated to `LISTEN`. It cannot be the one the
+    // routes use: reading notifications means blocking on the socket, and a
+    // shared connection blocked there is a server that answers nothing.
+    listen_for_changes(&settings.database, Arc::clone(&changes));
+
     let listener = TcpListener::bind(&settings.address)
         .map_err(|error| format!("could not listen on {}: {error}", settings.address))?;
 
@@ -69,7 +76,7 @@ fn run() -> Result<(), String> {
     // and this is the line that says the process got past its configuration.
     println!("planner-server listening on {}", settings.address);
 
-    let server = Arc::new(Server::new(client, settings.token));
+    let server = Arc::new(Server::new(client, settings.token, changes));
 
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
@@ -81,6 +88,46 @@ fn run() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Watch Postgres for `NOTIFY planner_changed` and wake anyone parked.
+///
+/// On its own thread with its own connection, and it reconnects rather than
+/// giving up: a database restart would otherwise leave every client silently
+/// falling back to its timer with nothing saying why.
+fn listen_for_changes(database: &str, changes: Arc<planner_server::Changes>) {
+    let database = database.to_string();
+    std::thread::spawn(move || loop {
+        match postgres::Client::connect(&database, postgres::NoTls) {
+            Ok(mut client) => {
+                if let Err(error) =
+                    client.batch_execute(&format!("LISTEN {}", planner_server::records::CHANNEL))
+                {
+                    eprintln!("planner-server: could not listen: {error}");
+                }
+
+                // `notifications().blocking_iter()` parks this thread until
+                // something arrives, which is the whole point — no polling
+                // anywhere in this path.
+                // `FallibleIterator`, not `Iterator`: it can fail as well as
+                // end, and the two mean different things here — an error is a
+                // connection to rebuild, an end is one already gone.
+                use postgres::fallible_iterator::FallibleIterator;
+                let mut notifications = client.notifications();
+                let mut iter = notifications.blocking_iter();
+                while let Ok(Some(_)) = iter.next() {
+                    changes.announce();
+                }
+            }
+            Err(error) => eprintln!("planner-server: could not watch for changes: {error}"),
+        }
+
+        // Wake everyone before retrying. A client parked here through a
+        // database blip should go and look for itself rather than trust a
+        // notification channel that was not connected.
+        changes.announce();
+        std::thread::sleep(Duration::from_secs(5));
+    });
 }
 
 fn serve(server: &Server, mut stream: TcpStream) {

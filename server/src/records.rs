@@ -103,6 +103,38 @@ pub const SNAPSHOT: &str = "
     ORDER BY kind, id
 ";
 
+/// The channel a write announces itself on.
+///
+/// Postgres rather than a flag in this process, even though this process is
+/// the only thing that writes today. A `psql` session fixing something by hand
+/// is a write too, and a client that sat waiting through it would be waiting
+/// on a lie. The cost is one statement per batch.
+pub const CHANNEL: &str = "planner_changed";
+
+/// Announce that something changed.
+///
+/// Inside the same transaction as the writes, so a rolled-back batch announces
+/// nothing — Postgres holds notifications until commit precisely for this.
+pub const ANNOUNCE: &str = "NOTIFY planner_changed";
+
+/// Has anything changed since the caller last looked?
+///
+/// `greatest(updated_at, deleted_at)` is the expression the index is built on,
+/// so this is a range scan rather than a walk of the table on every wait.
+pub const CHANGED_SINCE: &str = "
+    SELECT EXISTS (
+        SELECT 1 FROM records
+        WHERE greatest(updated_at, coalesce(deleted_at, updated_at)) > $1
+    )
+";
+
+/// The newest version the server holds, for the caller to send back next time.
+///
+/// Null on an empty table, which the caller reads as the epoch.
+pub const HIGH_WATER: &str = "
+    SELECT max(greatest(updated_at, coalesce(deleted_at, updated_at))) FROM records
+";
+
 /// The bodies of specific records, for the pull half of a pass.
 ///
 /// One kind at a time — five queries at the very worst — because a composite

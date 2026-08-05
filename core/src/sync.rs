@@ -264,6 +264,19 @@ pub trait Remote {
     fn push(&self, records: &[Record]) -> Result<(), SyncError>;
     /// Mark these deleted, on the same terms.
     fn delete(&self, records: &[Record]) -> Result<(), SyncError>;
+
+    /// Block until something changes on the server, or until it gives up
+    /// waiting.
+    ///
+    /// This is what makes sync feel immediate rather than punctual: a client
+    /// that has just finished a pass asks this and hears nothing until another
+    /// machine writes. `since` is the cursor the server last handed out, so
+    /// the client never has to reason about what "changed" means — a change
+    /// that lands between a pass and this call comes straight back rather than
+    /// being slept through.
+    ///
+    /// Returns the new cursor, and whether anything actually moved.
+    fn wait_for_change(&self, since: DateTime<Utc>) -> Result<(bool, DateTime<Utc>), SyncError>;
 }
 
 /// What one pass brought back, waiting to be applied.

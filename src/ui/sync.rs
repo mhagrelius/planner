@@ -35,6 +35,13 @@ use crate::model::sync::{Key, Record, Remote, Snapshot, SyncError};
 /// is a worker thread parked on a NAS that is asleep.
 const TIMEOUT: Duration = Duration::from_secs(20);
 
+/// How long to let the server hold a `/changes` request.
+///
+/// Comfortably past the server's own fifty seconds, because the server giving
+/// up is the normal end of a quiet wait and must not look like the network
+/// failing.
+const WAIT_TIMEOUT: Duration = Duration::from_secs(75);
+
 /// The server, over HTTP.
 pub struct HttpRemote {
     host: String,
@@ -74,9 +81,19 @@ impl HttpRemote {
     }
 
     fn request(&self, method: &str, path: &str, body: Option<&[u8]>) -> Result<Vec<u8>, SyncError> {
+        self.request_within(method, path, body, TIMEOUT)
+    }
+
+    fn request_within(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, SyncError> {
         let mut stream = TcpStream::connect((self.host.as_str(), self.port))
             .map_err(|error| SyncError(format!("could not reach {}: {error}", self.host)))?;
-        stream.set_read_timeout(Some(TIMEOUT)).ok();
+        stream.set_read_timeout(Some(timeout)).ok();
         stream.set_write_timeout(Some(TIMEOUT)).ok();
 
         let body = body.unwrap_or(&[]);
@@ -103,6 +120,14 @@ impl HttpRemote {
 
     fn get(&self, path: &str) -> Result<Vec<u8>, SyncError> {
         self.request("GET", path, None)
+    }
+
+    /// A request the server is expected to sit on.
+    ///
+    /// The ordinary timeout would fire long before the server gave up waiting,
+    /// turning every quiet minute into a reported failure.
+    fn get_slowly(&self, path: &str) -> Result<Vec<u8>, SyncError> {
+        self.request_within("GET", path, None, WAIT_TIMEOUT)
     }
 
     fn post(&self, path: &str, value: &impl serde::Serialize) -> Result<Vec<u8>, SyncError> {
@@ -169,6 +194,26 @@ impl Remote for HttpRemote {
     fn delete(&self, records: &[Record]) -> Result<(), SyncError> {
         self.post("/deletions", &records).map(|_| ())
     }
+
+    fn wait_for_change(
+        &self,
+        since: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(bool, chrono::DateTime<chrono::Utc>), SyncError> {
+        // The `+` in an offset would be read as a space in a query string, so
+        // the cursor goes over the wire in the one format that has none.
+        let since = since.to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
+        let body = self.get_slowly(&format!("/changes?since={since}"))?;
+        let answer: Changed = serde_json::from_slice(&body)
+            .map_err(|error| SyncError(format!("could not read the answer: {error}")))?;
+        Ok((answer.changed, answer.now))
+    }
+}
+
+/// What the server says when it stops holding a request.
+#[derive(serde::Deserialize)]
+struct Changed {
+    changed: bool,
+    now: chrono::DateTime<chrono::Utc>,
 }
 
 /// A snapshot row as the server writes it.
