@@ -14,6 +14,7 @@
 
 use gtk::glib;
 use gtk::prelude::*;
+use std::os::unix::fs::PermissionsExt;
 
 use chrono::NaiveDate;
 use planner::model::color::Color;
@@ -1090,6 +1091,78 @@ fn widgets() {
         },
     );
 
+    runner.case("a sync that keeps failing eventually says so", || {
+        // The banner is the only part of sync a user ever sees, and it is the
+        // part hardest to reach by hand: it takes a server that stays down.
+        // Port 1 is nobody's, and a refused connection is instant, so three
+        // failures take a second rather than ten minutes of unplugging a NAS.
+        let dir = tempfile::TempDir::new().expect("a temp dir");
+        std::env::set_var("XDG_DATA_HOME", dir.path());
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        std::fs::create_dir_all(dir.path().join("planner")).expect("the config dir");
+        std::fs::write(
+            dir.path().join("planner").join("config.json"),
+            r#"{"sync_url":"http://127.0.0.1:1","sync_token":"nobody-is-listening"}"#,
+        )
+        .expect("a config");
+
+        let app = PlannerApplication::with_application_id("us.hagreli.Planner.SyncBannerTest");
+        app.register(gtk::gio::Cancellable::NONE)
+            .expect("registering emits startup, which starts syncing");
+        let window = PlannerWindow::new(&app);
+
+        // Startup runs the first pass; two more take it past the threshold.
+        settle_for(600);
+        assert_eq!(
+            window.banner_text(),
+            None,
+            "one failure is a NAS asleep — saying so would teach the user to \
+             ignore the banner"
+        );
+
+        app.sync_now();
+        settle_for(600);
+        app.sync_now();
+        settle_for(900);
+
+        let banner = window
+            .banner_text()
+            .expect("three failures in a row is a condition");
+        assert!(
+            banner.starts_with("Not syncing"),
+            "the banner should say what is wrong: {banner}"
+        );
+
+        // And a save failure takes the banner off it: that is data not being
+        // written *now*, where a sync failure is data that has not travelled
+        // yet. Made real by taking write permission off the directory the
+        // store saves into.
+        let data = dir.path().join("planner");
+        let locked = std::fs::Permissions::from_mode(0o555);
+        std::fs::set_permissions(&data, locked).expect("lock the directory");
+
+        // Something to save. `save_now` returns early when nothing is dirty,
+        // so without an edit it would never attempt the write and never
+        // discover it cannot.
+        app.mutate(|store| {
+            store.add_task(Task::new(ProjectId::inbox(), "Cannot be written", now()));
+        });
+        app.save_now();
+        settle_for(100);
+        let banner = window
+            .banner_text()
+            .expect("a save failure is a condition too");
+        assert!(
+            !banner.starts_with("Not syncing"),
+            "a save failure outranks a sync failure: {banner}"
+        );
+
+        // Put it back, or the temporary directory cannot be cleaned up.
+        std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755))
+            .expect("unlock the directory");
+    });
+
     runner.case("every icon a view asks for exists in the theme", || {
         // A missing icon name is not an error at runtime — GTK draws a
         // broken-image glyph and carries on — so nothing else would catch it.
@@ -1221,6 +1294,21 @@ fn list_item(list: &TaskList, index: u32) -> TaskObject {
     // Reaching through the list's own model keeps the test honest about what
     // the view is actually showing.
     list.item(index).expect("an item at this index")
+}
+
+/// Run the main loop for a while, so timers actually fire.
+///
+/// A sync pass hands its answer back through a `glib::timeout_add_local`, and
+/// draining the context is not enough on its own — a timer needs time to have
+/// passed. Sleeping in small slices between drains gives it that without
+/// making the test wait for a fixed worst case.
+fn settle_for(millis: u64) {
+    let context = glib::MainContext::default();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(millis);
+    while std::time::Instant::now() < deadline {
+        while context.iteration(false) {}
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 }
 
 /// A `toggled` handler that records what it was told.

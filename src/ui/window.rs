@@ -1656,6 +1656,19 @@ impl PlannerWindow {
             .map(|view| view.id)
     }
 
+    /// What the banner is saying, if it is showing at all.
+    ///
+    /// The banner is the app's one place for an ongoing condition, and there
+    /// is now more than one thing that can claim it, so what it ends up
+    /// showing is worth being able to ask about.
+    pub fn banner_text(&self) -> Option<String> {
+        let banner = self.imp().banner.borrow().clone()?;
+        banner
+            .is_revealed()
+            .then(|| banner.title().to_string())
+            .filter(|title| !title.is_empty())
+    }
+
     pub fn set_save_error(&self, error: Option<String>) {
         let Some(banner) = self.imp().banner.borrow().clone() else {
             return;
