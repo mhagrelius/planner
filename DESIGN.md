@@ -12,6 +12,9 @@ model field that sync would need (stable UUID, `updated_at`, tombstones) exists
 from day one so a sync source can be added later without a migration, but none
 of that code gets written now.
 
+> Sync exists now, and the claim above turned out to be two thirds true — see
+> **Built differently, or not built** and `PLAN.md`.
+
 ## What it does
 
 ### Structure
@@ -197,6 +200,39 @@ Where the finished thing differs from this document, this is what happened.
   file was going to cover between them.
 - **Bulk label editing** is not in the multi-select bar. Priority, date,
   complete and delete are; labels need a picker that does not exist yet.
+
+### Sync, which this document said was not in v1
+
+It is, because the app has to run on Windows and a Mac as well as here.
+`PLAN.md` carries the reasoning; what contradicts this document is below.
+
+- **The claim that sync needed no migration was wrong.** Stable ids and
+  `updated_at` on a task were real. Tombstones were not: deletion was a plain
+  `Vec::retain`, so "I deleted this" and "I have not seen this" were the same
+  sentence and every deleted task came back on the next pass. Projects,
+  sections, labels and filters had no `updated_at` either. Schema v2 adds both.
+  A v1 file still opens and is upgraded in place.
+
+- **`model/` is its own crate**, `planner-core`. Not for the reason `brain`
+  split — the rules were already GTK-free — but because `planner-server` needs
+  the record types and a container has no business linking libadwaita.
+
+- **A section is a record, not a field of its project.** Nested, two machines
+  each adding one were two edits to the same project record, and merging them
+  kept one and dropped the other.
+
+- **`order` is a key, not a position.** `renumber` foresaw the problem and
+  could not solve it: a reorder that bumps `updated_at` sends the whole list,
+  and one that does not reaches nobody.
+
+- **A conflict is resolved, not preserved.** `brain` writes a conflict copy
+  because a note is prose; a task is a dozen scalars, so this is
+  last-writer-wins per record. The cost, stated plainly: two machines editing
+  one task's description in a pass keeps one, and adding a different label on
+  each keeps one set rather than the union.
+
+- **The server is Postgres, not files.** Its whole job is refusing a stale
+  write, which is one atomic upsert and a lock-plus-race against a directory.
 
 ## An agent interface
 

@@ -10,7 +10,15 @@ This follows the path `brain` took and departs from it in two places, both
 because the data is a different shape. `brain`'s `PLAN.md` is the reference for
 anything not restated here.
 
-Nothing below is built yet.
+**Where this has got to.** Phases 0 to 5 are done and on `server-sync`.
+`./sync-check.sh` proves the whole path on one machine: it stands up a
+throwaway server against a database of its own, drives it with the real client
+code, and watches two stores push, pull, resolve a double edit, and refuse to
+resurrect a deleted task. `planner-server` is running on the NAS on 8083.
+
+Sync is off until a URL and a token are put in `~/.config/planner/config.json`
+on purpose. Unlike the document, whose location the app can work out, there is
+nothing sensible to guess at here.
 
 ## What does not change
 
