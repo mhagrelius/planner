@@ -51,12 +51,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::store::Store;
 use crate::tombstone::RecordKind;
 
 /// Which record a snapshot entry is about.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Key {
     pub kind: RecordKind,
     pub id: String,
@@ -78,7 +79,7 @@ impl Key {
 /// the same microsecond would be missed by that, and the answer is a content
 /// hash — which is a second thing to keep in step with the record for a case
 /// that needs two clocks to agree to the microsecond. Not yet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Version {
     /// The record is there, last changed at this moment.
     Live(DateTime<Utc>),
@@ -221,6 +222,262 @@ fn resolve(here: &Version, there: &Version) -> (Side, Version) {
             }
         }
     }
+}
+
+/// One record, with its contents, on its way between machines.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Record {
+    pub kind: RecordKind,
+    pub id: String,
+    pub updated_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<serde_json::Value>,
+}
+
+/// Why a pass could not finish.
+///
+/// One string, because every one of them means the same thing to the caller:
+/// the server could not be reached or did not agree, so try again later. The
+/// text is for a log line, not for branching.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncError(pub String);
+
+impl std::fmt::Display for SyncError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for SyncError {}
+
+/// The other side, whatever is carrying it.
+///
+/// A trait so the core does not learn what a socket is. The GTK shell answers
+/// it over plain HTTP; a shell on another platform can answer it with whatever
+/// that platform already has, and neither needs the other's networking stack.
+pub trait Remote {
+    /// Every record the server holds, without the bodies.
+    fn snapshot(&self) -> Result<Snapshot, SyncError>;
+    /// The bodies of these records.
+    fn fetch(&self, keys: &[Key]) -> Result<Vec<Record>, SyncError>;
+    /// Store these, refusing any the server holds a newer copy of.
+    fn push(&self, records: &[Record]) -> Result<(), SyncError>;
+    /// Mark these deleted, on the same terms.
+    fn delete(&self, records: &[Record]) -> Result<(), SyncError>;
+}
+
+/// What one pass brought back, waiting to be applied.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Incoming {
+    /// Records to write into the store.
+    pub records: Vec<Record>,
+    /// Records to remove from it.
+    pub deletions: Vec<Record>,
+    /// The snapshot the two sides now agree on, for the next pass's base.
+    ///
+    /// **What happened, not what was planned.** A push that failed is left
+    /// out, so a pass that dies half way retries next time instead of
+    /// believing itself.
+    pub base: Snapshot,
+}
+
+/// The half of a pass that talks to the network, and writes nothing.
+///
+/// Safe on a worker thread precisely because of that: it is handed a snapshot
+/// taken on the main thread and gives back records. Every local write happens
+/// in [`apply`], on the thread that owns the store — which is the only one that
+/// knows which task is open in the detail panel and whether it has been typed
+/// into since.
+///
+/// Pushes go first and deletions last, so a pass that fails part way has told
+/// the server about work that exists rather than about work that is gone.
+pub fn gather(
+    remote: &dyn Remote,
+    base: &Snapshot,
+    local: &Snapshot,
+    bodies: impl Fn(&Key) -> Option<serde_json::Value>,
+) -> Result<Incoming, SyncError> {
+    let there = remote.snapshot()?;
+    let plan = plan(base, local, &there);
+
+    let mut agreed = base.clone();
+
+    // --- up ----------------------------------------------------------------
+
+    let outgoing: Vec<Record> = plan
+        .push
+        .iter()
+        .filter_map(|key| {
+            // Gone between the snapshot and here. The next pass sees the
+            // marker and sends the deletion instead.
+            let body = bodies(key)?;
+            Some(Record {
+                kind: key.kind,
+                id: key.id.clone(),
+                updated_at: version_at(local.get(key))?,
+                body: Some(body),
+            })
+        })
+        .collect();
+    if !outgoing.is_empty() {
+        remote.push(&outgoing)?;
+        for record in &outgoing {
+            let key = Key::new(record.kind, record.id.clone());
+            agreed.insert(key, Version::Live(record.updated_at));
+        }
+    }
+
+    let removals: Vec<Record> = plan
+        .delete_remote
+        .iter()
+        .filter_map(|key| {
+            Some(Record {
+                kind: key.kind,
+                id: key.id.clone(),
+                updated_at: version_at(local.get(key))?,
+                body: None,
+            })
+        })
+        .collect();
+    if !removals.is_empty() {
+        remote.delete(&removals)?;
+        for record in &removals {
+            let key = Key::new(record.kind, record.id.clone());
+            agreed.insert(key, Version::Deleted(record.updated_at));
+        }
+    }
+
+    // --- down --------------------------------------------------------------
+
+    let records = if plan.pull.is_empty() {
+        Vec::new()
+    } else {
+        remote.fetch(&plan.pull)?
+    };
+
+    let deletions: Vec<Record> = plan
+        .delete_local
+        .iter()
+        .filter_map(|key| {
+            Some(Record {
+                kind: key.kind,
+                id: key.id.clone(),
+                updated_at: version_at(there.get(key))?,
+                body: None,
+            })
+        })
+        .collect();
+
+    Ok(Incoming {
+        records,
+        deletions,
+        base: agreed,
+    })
+}
+
+fn version_at(version: Option<&Version>) -> Option<DateTime<Utc>> {
+    version.map(Version::at)
+}
+
+/// What applying a pass did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Report {
+    pub written: usize,
+    pub removed: usize,
+    /// Records that arrived but could not be read — a newer schema, or a
+    /// record this build has no type for. Left alone rather than guessed at,
+    /// and left out of the base so the next pass tries again.
+    pub unreadable: usize,
+}
+
+impl Report {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.written + self.removed
+    }
+}
+
+/// The half of a pass that writes, on the thread that owns the store.
+///
+/// Deletions go last, so a failure part way leaves records present rather than
+/// gone — the recoverable mistake of the two.
+///
+/// `held` decides what to leave for later: the shell passes the task currently
+/// open and being edited, because a pull landing on it would take the text out
+/// from under the cursor. What is held is left out of the returned base, so the
+/// next pass offers it again.
+pub fn apply(
+    store: &mut crate::store::Store,
+    incoming: Incoming,
+    held: impl Fn(&Key) -> bool,
+    now: DateTime<Utc>,
+) -> (Report, Snapshot) {
+    let mut report = Report::default();
+    let mut base = incoming.base;
+
+    for record in incoming.records {
+        let key = Key::new(record.kind, record.id.clone());
+        if held(&key) {
+            continue;
+        }
+        let Some(body) = record.body else {
+            report.unreadable += 1;
+            continue;
+        };
+        match store.merge_record(record.kind, body) {
+            Ok(()) => {
+                report.written += 1;
+                base.insert(key, Version::Live(record.updated_at));
+            }
+            Err(_) => report.unreadable += 1,
+        }
+    }
+
+    for record in incoming.deletions {
+        let key = Key::new(record.kind, record.id.clone());
+        if held(&key) {
+            continue;
+        }
+        store.apply_deletion(record.kind, &record.id, record.updated_at);
+        report.removed += 1;
+        base.insert(key, Version::Deleted(record.updated_at));
+    }
+
+    let _ = now;
+    (report, base)
+}
+
+/// Where the agreed snapshot is kept, beside the document.
+///
+/// Per machine, not shared: it records what *this* machine last agreed with the
+/// server, and two machines have different answers.
+pub fn default_base_path(document: &std::path::Path) -> std::path::PathBuf {
+    document.with_file_name("sync-base.json")
+}
+
+/// Read the last agreed snapshot.
+///
+/// A missing or unreadable file is an empty base rather than an error. That is
+/// the honest reading — this machine has agreed nothing — and it makes the
+/// first pass a full comparison instead of a failure.
+pub fn load_base(path: &std::path::Path) -> Snapshot {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<Vec<(Key, Version)>>(&raw).ok())
+        .map(|entries| entries.into_iter().collect())
+        .unwrap_or_default()
+}
+
+pub fn save_base(base: &Snapshot, path: &std::path::Path) -> std::io::Result<()> {
+    let entries: Vec<(&Key, &Version)> = base.iter().collect();
+    let encoded = serde_json::to_string(&entries)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, encoded)
 }
 
 /// What this store currently holds, in the shape a pass compares.

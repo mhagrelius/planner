@@ -104,10 +104,15 @@ pub const SNAPSHOT: &str = "
 ";
 
 /// The bodies of specific records, for the pull half of a pass.
+///
+/// One kind at a time — five queries at the very worst — because a composite
+/// `(kind, id) = ANY(…)` needs an array of anonymous records that the client
+/// library has no clean way to build. Grouping by kind costs a loop and reads
+/// like the index it uses.
 pub const FETCH: &str = "
     SELECT kind, id, updated_at, deleted_at, body
     FROM records
-    WHERE (kind, id) = ANY($1)
+    WHERE kind = $1 AND id = ANY($2)
 ";
 
 #[cfg(test)]

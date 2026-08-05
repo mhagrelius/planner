@@ -281,6 +281,127 @@ impl Store {
         &self.document.tombstones
     }
 
+    /// Put a record from another machine into this store.
+    ///
+    /// Replaces by id, or inserts if it is new. The incoming record carries its
+    /// own `updated_at` and keeps it: this is not an edit, it is the same edit
+    /// arriving here, and re-stamping it would make every pass look like a
+    /// change and send it straight back.
+    ///
+    /// Whether the incoming copy *should* win is already decided by
+    /// [`crate::sync::plan`]. This does what it was told.
+    pub fn merge_record(
+        &mut self,
+        kind: RecordKind,
+        body: serde_json::Value,
+    ) -> Result<(), serde_json::Error> {
+        fn replace<T>(items: &mut Vec<T>, incoming: T, same: impl Fn(&T, &T) -> bool) {
+            match items.iter_mut().find(|existing| same(existing, &incoming)) {
+                Some(existing) => *existing = incoming,
+                None => items.push(incoming),
+            }
+        }
+
+        match kind {
+            RecordKind::Task => {
+                let task: Task = serde_json::from_value(body)?;
+                self.unmark(RecordKind::Task, task.id.as_str());
+                replace(&mut self.document.tasks, task, |a, b| a.id == b.id);
+            }
+            RecordKind::Project => {
+                let project: Project = serde_json::from_value(body)?;
+                self.unmark(RecordKind::Project, project.id.as_str());
+                replace(&mut self.document.projects, project, |a, b| a.id == b.id);
+            }
+            RecordKind::Section => {
+                let section: Section = serde_json::from_value(body)?;
+                self.unmark(RecordKind::Section, section.id.as_str());
+                replace(&mut self.document.sections, section, |a, b| a.id == b.id);
+            }
+            RecordKind::Label => {
+                let label: Label = serde_json::from_value(body)?;
+                self.unmark(RecordKind::Label, label.id.as_str());
+                replace(&mut self.document.labels, label, |a, b| a.id == b.id);
+            }
+            RecordKind::Filter => {
+                let filter: SavedFilter = serde_json::from_value(body)?;
+                self.unmark(RecordKind::Filter, filter.id.as_str());
+                replace(&mut self.document.filters, filter, |a, b| a.id == b.id);
+            }
+        }
+        Ok(())
+    }
+
+    /// Apply a deletion another machine made.
+    ///
+    /// The Inbox is exempt. It is constructed rather than stored, so deleting
+    /// it here would produce a store whose tasks point at a project that does
+    /// not exist until the next open puts it back.
+    pub fn apply_deletion(&mut self, kind: RecordKind, id: &str, at: DateTime<Utc>) {
+        match kind {
+            RecordKind::Task => self.document.tasks.retain(|task| task.id.as_str() != id),
+            RecordKind::Project => {
+                if ProjectId::from_raw(id).is_inbox() {
+                    return;
+                }
+                self.document
+                    .projects
+                    .retain(|project| project.id.as_str() != id);
+            }
+            RecordKind::Section => self
+                .document
+                .sections
+                .retain(|section| section.id.as_str() != id),
+            RecordKind::Label => self.document.labels.retain(|label| label.id.as_str() != id),
+            RecordKind::Filter => self
+                .document
+                .filters
+                .retain(|filter| filter.id.as_str() != id),
+        }
+        self.mark_deleted(kind, id, at);
+    }
+
+    /// The record itself, as it would go on the wire.
+    ///
+    /// `None` when the id is not there, which after a plan means it was deleted
+    /// between the snapshot and the push — the next pass sees the marker and
+    /// sends the deletion instead.
+    pub fn record_body(&self, kind: RecordKind, id: &str) -> Option<serde_json::Value> {
+        let value = match kind {
+            RecordKind::Task => self
+                .document
+                .tasks
+                .iter()
+                .find(|t| t.id.as_str() == id)
+                .map(serde_json::to_value),
+            RecordKind::Project => self
+                .document
+                .projects
+                .iter()
+                .find(|p| p.id.as_str() == id)
+                .map(serde_json::to_value),
+            RecordKind::Section => self
+                .document
+                .sections
+                .iter()
+                .find(|s| s.id.as_str() == id)
+                .map(serde_json::to_value),
+            RecordKind::Label => self
+                .document
+                .labels
+                .iter()
+                .find(|l| l.id.as_str() == id)
+                .map(serde_json::to_value),
+            RecordKind::Filter => self
+                .document
+                .filters
+                .iter()
+                .find(|f| f.id.as_str() == id)
+                .map(serde_json::to_value),
+        };
+        value.and_then(Result::ok)
+    }
+
     /// Whether a record was deleted rather than never seen.
     pub fn is_deleted(&self, kind: RecordKind, id: &str) -> bool {
         self.document

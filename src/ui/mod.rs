@@ -14,6 +14,7 @@ pub mod project_view;
 pub mod quick_add;
 pub mod quick_find;
 pub mod sidebar;
+pub mod sync;
 pub mod task_list;
 pub mod task_object;
 pub mod task_row;

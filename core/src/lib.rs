@@ -15,6 +15,7 @@
 
 pub mod agent;
 pub mod color;
+pub mod config;
 pub mod due;
 pub mod id;
 pub mod order;
@@ -31,6 +32,7 @@ pub mod task;
 pub mod tombstone;
 
 pub use color::Color;
+pub use config::Config;
 pub use due::Due;
 pub use id::{FilterId, LabelId, ProjectId, ReminderId, SectionId, TaskId};
 pub use order::Order;

@@ -11,6 +11,7 @@
 //! |---|---|
 //! | `GET /health` | Is it up. No token, so a container healthcheck needs no secret. |
 //! | `GET /snapshot` | Every record's kind, id and version. No bodies. |
+//! | `POST /fetch` | The bodies of the records named in the request. |
 //! | `POST /records` | Store these, refusing any that are not newer. |
 //! | `POST /deletions` | Mark these gone, on the same terms. |
 
@@ -35,6 +36,13 @@ pub struct Incoming {
     /// Absent for a deletion, which is what `/deletions` is for.
     #[serde(default)]
     pub body: Option<serde_json::Value>,
+}
+
+/// A record a client is asking for by name.
+#[derive(Debug, Clone, Deserialize)]
+pub struct Wanted {
+    pub kind: RecordKind,
+    pub id: String,
 }
 
 /// What a write did, record by record.
@@ -84,6 +92,7 @@ impl Server {
 
         match (request.method.as_str(), request.path.as_str()) {
             ("GET", "/snapshot") => self.snapshot(),
+            ("POST", "/fetch") => self.fetch(request),
             ("POST", "/records") => self.write(request, false),
             ("POST", "/deletions") => self.write(request, true),
             ("GET", _) | ("POST", _) => Response::text(404, "no such route"),
@@ -122,6 +131,58 @@ impl Server {
             .collect();
 
         Response::json(200, &entries)
+    }
+
+    /// The bodies of the records a client decided to pull.
+    ///
+    /// Asked for by key rather than "everything since X": the client has
+    /// already compared three snapshots and knows exactly which records it
+    /// wants, and a server that decided for itself would be making the same
+    /// judgement with less information.
+    fn fetch(&self, request: &Request) -> Response {
+        let wanted: Vec<Wanted> = match serde_json::from_slice(&request.body) {
+            Ok(wanted) => wanted,
+            Err(error) => return Response::text(400, &format!("bad body: {error}")),
+        };
+
+        let mut client = match self.client.lock() {
+            Ok(client) => client,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        let mut found: Vec<Entry> = Vec::new();
+        for kind in [
+            RecordKind::Task,
+            RecordKind::Project,
+            RecordKind::Section,
+            RecordKind::Label,
+            RecordKind::Filter,
+        ] {
+            let ids: Vec<String> = wanted
+                .iter()
+                .filter(|key| key.kind == kind)
+                .map(|key| key.id.clone())
+                .collect();
+            if ids.is_empty() {
+                continue;
+            }
+
+            let rows = match client.query(records::FETCH, &[&records::kind_name(kind), &ids]) {
+                Ok(rows) => rows,
+                Err(error) => return Response::text(503, &format!("database: {error}")),
+            };
+            for row in &rows {
+                found.push(Entry {
+                    kind,
+                    id: row.get(1),
+                    updated_at: row.get(2),
+                    deleted_at: row.get(3),
+                    body: row.get(4),
+                });
+            }
+        }
+
+        Response::json(200, &found)
     }
 
     fn write(&self, request: &Request, deleting: bool) -> Response {

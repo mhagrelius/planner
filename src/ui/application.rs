@@ -26,6 +26,20 @@ use crate::ui::window::PlannerWindow;
 /// How often the store is flushed if it is dirty.
 const TICK: Duration = Duration::from_secs(2);
 
+/// How often a sync pass runs.
+///
+/// Long, deliberately. Nothing on screen waits for a pass, the other machine is
+/// usually asleep, and a planner is not a chat window — a task typed on the Mac
+/// arriving here within a few minutes is what this is for.
+const SYNC_TICK: Duration = Duration::from_secs(180);
+
+/// How many passes must fail before the window says anything.
+///
+/// One failure is a NAS asleep or a laptop changing networks. A banner for each
+/// would teach the user to ignore banners, which costs more than the warning is
+/// worth.
+const SYNC_FAILURES_BEFORE_SAYING_SO: u32 = 3;
+
 mod imp {
     use super::*;
 
@@ -40,6 +54,21 @@ mod imp {
         pub tick: RefCell<Option<glib::SourceId>>,
         pub schedule: RefCell<Schedule>,
         pub reminder_tick: RefCell<Option<glib::SourceId>>,
+
+        // --- sync -------------------------------------------------------
+        /// Where to sync to, if the config named somewhere.
+        pub sync_target: RefCell<Option<(String, String)>>,
+        /// What this machine and the server last agreed on.
+        pub sync_base: RefCell<crate::model::sync::Snapshot>,
+        pub sync_tick: RefCell<Option<glib::SourceId>>,
+        /// Set while a pass is in flight, so a slow server cannot have two
+        /// running at once and push the same records twice.
+        pub syncing: Cell<bool>,
+        /// The last sync failure. A banner rather than a toast, and only once
+        /// it has persisted — see [`PlannerApplication::report_sync_failure`].
+        pub sync_error: RefCell<Option<String>>,
+        /// How many passes in a row have failed.
+        pub sync_failures: Cell<u32>,
     }
 
     impl Default for PlannerApplication {
@@ -55,6 +84,12 @@ mod imp {
                 tick: RefCell::new(None),
                 schedule: RefCell::new(Schedule::new()),
                 reminder_tick: RefCell::new(None),
+                sync_target: RefCell::new(None),
+                sync_base: RefCell::new(Default::default()),
+                sync_tick: RefCell::new(None),
+                syncing: Cell::new(false),
+                sync_error: RefCell::new(None),
+                sync_failures: Cell::new(0),
             }
         }
     }
@@ -82,6 +117,7 @@ mod imp {
             obj.install_actions();
             obj.start_tick();
             obj.start_reminders();
+            obj.start_sync();
         }
 
         fn activate(&self) {
@@ -324,6 +360,191 @@ impl PlannerApplication {
         self.imp().tick.replace(Some(id));
     }
 
+    // --- sync -----------------------------------------------------------
+
+    /// Read the config and, if it names a server, start the sync tick.
+    ///
+    /// Sync is off until a URL and a token are written on purpose. There is
+    /// nothing sensible for the app to guess at here — unlike the document,
+    /// whose location it can work out — so a missing config is simply a
+    /// planner that does not sync.
+    fn start_sync(&self) {
+        let config = crate::model::Config::load();
+        let Some((url, token)) = config.sync_target() else {
+            return;
+        };
+        self.imp()
+            .sync_target
+            .replace(Some((url.to_string(), token.to_string())));
+
+        let base_path = crate::model::sync::default_base_path(
+            &self.with_store(|store| store.path().to_owned()),
+        );
+        self.imp()
+            .sync_base
+            .replace(crate::model::sync::load_base(&base_path));
+
+        // A first pass shortly after startup, then every few minutes. Nothing
+        // on screen is waiting for it, and a planner is not a chat window.
+        let id = glib::timeout_add_local(
+            SYNC_TICK,
+            glib::clone!(
+                #[weak(rename_to = app)]
+                self,
+                #[upgrade_or]
+                glib::ControlFlow::Break,
+                move || {
+                    app.sync_now();
+                    glib::ControlFlow::Continue
+                }
+            ),
+        );
+        self.imp().sync_tick.replace(Some(id));
+        self.sync_now();
+    }
+
+    /// Run one pass: network on a worker, every local write back here.
+    ///
+    /// **No code below this opens the planner file.** The worker is handed a
+    /// snapshot and the bodies it needs, and gives back records; the merge goes
+    /// through `mutate`, which sets the dirty flag and lets the ordinary save
+    /// tick do the writing. Two writers over one document is the failure this
+    /// shape exists to prevent.
+    pub fn sync_now(&self) {
+        let Some((url, token)) = self.imp().sync_target.borrow().clone() else {
+            return;
+        };
+        // A server slow enough to overlap two passes would otherwise be sent
+        // the same records twice.
+        if self.imp().syncing.get() {
+            return;
+        }
+
+        // Everything the worker needs, taken here while the store is still.
+        let base = self.imp().sync_base.borrow().clone();
+        let (local, bodies) = self.with_store(|store| {
+            let local = crate::model::sync::snapshot_of(store);
+            let bodies: std::collections::BTreeMap<_, _> = local
+                .keys()
+                .filter_map(|key| {
+                    store
+                        .record_body(key.kind, &key.id)
+                        .map(|body| (key.clone(), body))
+                })
+                .collect();
+            (local, bodies)
+        });
+
+        self.imp().syncing.set(true);
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let outcome = crate::ui::sync::HttpRemote::new(&url, token).and_then(|remote| {
+                crate::model::sync::gather(&remote, &base, &local, |key| bodies.get(key).cloned())
+            });
+            let _ = sender.send(outcome);
+        });
+
+        // Poll for the worker's answer on the main loop rather than touching a
+        // widget from the thread. `glib::idle_add_local` would spin; a short
+        // timer costs nothing and the pass is not urgent.
+        glib::timeout_add_local(
+            Duration::from_millis(250),
+            glib::clone!(
+                #[weak(rename_to = app)]
+                self,
+                #[upgrade_or]
+                glib::ControlFlow::Break,
+                move || match receiver.try_recv() {
+                    Ok(outcome) => {
+                        app.imp().syncing.set(false);
+                        app.finish_sync(outcome);
+                        glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                    // The worker died without answering. Nothing was applied,
+                    // so the next pass simply tries again.
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        app.imp().syncing.set(false);
+                        glib::ControlFlow::Break
+                    }
+                }
+            ),
+        );
+    }
+
+    /// Apply what a pass brought back. Main thread, by construction.
+    fn finish_sync(
+        &self,
+        outcome: Result<crate::model::sync::Incoming, crate::model::sync::SyncError>,
+    ) {
+        let incoming = match outcome {
+            Ok(incoming) => incoming,
+            Err(error) => return self.report_sync_failure(error.to_string()),
+        };
+
+        // A pull landing on the task open in the detail panel would take the
+        // text out from under the cursor. Held back, and left out of the base,
+        // so the next pass offers it again once the panel has moved on.
+        let open = self
+            .active_window()
+            .and_downcast::<PlannerWindow>()
+            .and_then(|window| window.task_in_detail_panel());
+        let held = move |key: &crate::model::sync::Key| {
+            open.as_ref().is_some_and(|id| {
+                key.kind == crate::model::RecordKind::Task && key.id == id.as_str()
+            })
+        };
+
+        let now = chrono::Utc::now();
+        let (report, base) =
+            self.mutate(|store| crate::model::sync::apply(store, incoming, &held, now));
+
+        self.imp().sync_base.replace(base.clone());
+        let path = crate::model::sync::default_base_path(
+            &self.with_store(|store| store.path().to_owned()),
+        );
+        if let Err(error) = crate::model::sync::save_base(&base, &path) {
+            eprintln!("planner: could not record what was synced: {error}");
+        }
+
+        self.imp().sync_failures.set(0);
+        if self.imp().sync_error.borrow_mut().take().is_some() {
+            self.notify_save_state();
+        }
+
+        // Nothing at all on a clean pass. Sync is awareness, not applause.
+        if !report.is_empty() {
+            self.refresh();
+        }
+    }
+
+    /// A pass failed.
+    ///
+    /// Not reported the first time. A NAS asleep, a laptop between networks
+    /// and a suspended machine all produce one failed pass, and a banner for
+    /// each would train the user to ignore the banner. It only becomes an
+    /// ongoing condition — the thing a banner is for — once it has kept
+    /// failing.
+    fn report_sync_failure(&self, message: String) {
+        let failures = self.imp().sync_failures.get() + 1;
+        self.imp().sync_failures.set(failures);
+        if failures < SYNC_FAILURES_BEFORE_SAYING_SO {
+            return;
+        }
+        let already = self.imp().sync_error.borrow().as_deref() == Some(message.as_str());
+        if already {
+            return;
+        }
+        self.imp().sync_error.replace(Some(message));
+        self.notify_save_state();
+    }
+
+    /// Why sync is unhappy, if it has been for long enough to matter.
+    pub fn sync_error(&self) -> Option<String> {
+        self.imp().sync_error.borrow().clone()
+    }
+
     // --- reminders ------------------------------------------------------
 
     /// Start watching for reminders coming due.
@@ -408,9 +629,19 @@ impl PlannerApplication {
         }
     }
 
+    /// Put whichever condition matters most on the window's one banner.
+    ///
+    /// **A save failure outranks a sync failure**, because it is data not
+    /// being written right now, where a sync failure is data that has not
+    /// reached the other machine yet. Three conditions on one surface needs a
+    /// priority rule, and this is it.
     fn notify_save_state(&self) {
         if let Some(window) = self.active_window().and_downcast::<PlannerWindow>() {
-            window.set_save_error(self.save_error());
+            let condition = self.save_error().or_else(|| {
+                self.sync_error()
+                    .map(|reason| format!("Not syncing: {reason}"))
+            });
+            window.set_save_error(condition);
         }
     }
 

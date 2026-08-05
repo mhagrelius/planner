@@ -1634,6 +1634,19 @@ impl PlannerWindow {
     /// this is an ongoing condition, and a toast about lost work is exactly
     /// the toast you miss because you are typing.
     /// The view the sidebar is showing, for tests.
+    /// The task the detail panel is showing, if any.
+    ///
+    /// A sync pass asks so it can hold back a pull aimed at it: replacing the
+    /// record under an open panel would take the text out from under the
+    /// cursor mid-sentence.
+    pub fn task_in_detail_panel(&self) -> Option<TaskId> {
+        self.imp()
+            .detail
+            .borrow()
+            .as_ref()
+            .and_then(|panel| panel.task_id())
+    }
+
     pub fn selected_view_id(&self) -> Option<String> {
         self.imp()
             .sidebar

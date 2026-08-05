@@ -28,6 +28,10 @@ planner-core = { path = "core" }
 gtk = { package = "gtk4", version = "0.11", features = ["v4_22"] }
 adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }
 gio = { version = "0.22", features = ["v2_80"] }
+# The shell's own wire types: the shapes planner-server's routes answer with.
+# Everything the document is made of is planner-core's to serialise.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 # `clock` for `ui::today()`, the one place anything asks what day it is.
 # planner-core takes chrono without it on purpose.
 chrono = { version = "0.4", default-features = false, features = [

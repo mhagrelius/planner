@@ -875,6 +875,8 @@ dependencies = [
  "gtk4",
  "libadwaita",
  "planner-core",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 
