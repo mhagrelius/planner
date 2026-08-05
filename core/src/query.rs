@@ -233,7 +233,7 @@ impl Term {
                 Some(section_id) => cx
                     .store
                     .section(section_id)
-                    .is_some_and(|(_, section)| section.name.eq_ignore_ascii_case(name)),
+                    .is_some_and(|section| section.name.eq_ignore_ascii_case(name)),
             },
             Self::Search(needle) => {
                 let needle = needle.to_lowercase();
@@ -914,10 +914,7 @@ mod tests {
     fn sections_match_by_name() {
         let mut store = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        let section = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Doing"));
+        let section = store.add_section(Section::new(project.clone(), "Doing"));
 
         let mut in_section = Task::new(project.clone(), "In progress", now());
         in_section.section_id = Some(section);

@@ -302,7 +302,7 @@ impl TaskView {
                 .section_id
                 .as_ref()
                 .and_then(|id| store.section(id))
-                .map(|(_, section)| section.name.clone()),
+                .map(|section| section.name.clone()),
             due: task.due.as_ref().map(due_phrase),
             repeats: task
                 .due
@@ -353,8 +353,8 @@ impl ProjectView {
                 .as_ref()
                 .and_then(|id| store.project(id))
                 .map(|parent| parent.name.clone()),
-            sections: project
-                .sections_ordered()
+            sections: store
+                .sections_in(&project.id)
                 .into_iter()
                 .map(|section| section.name.clone())
                 .collect(),
@@ -474,10 +474,7 @@ mod tests {
     fn a_view_names_what_the_record_only_points_at() {
         let mut store = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        let section = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Admin"));
+        let section = store.add_section(Section::new(project.clone(), "Admin"));
         let label = store.label_for_name("email");
 
         let mut task = Task::new(project, "Email Sam", now());

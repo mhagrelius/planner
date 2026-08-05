@@ -54,6 +54,9 @@ struct Document {
     version: u32,
     #[serde(default)]
     projects: Vec<Project>,
+    /// Nested inside their projects until schema v2; see [`Section`].
+    #[serde(default)]
+    sections: Vec<Section>,
     #[serde(default)]
     labels: Vec<Label>,
     #[serde(default)]
@@ -67,6 +70,7 @@ impl Default for Document {
         Self {
             version: SCHEMA_VERSION,
             projects: vec![Project::inbox()],
+            sections: Vec::new(),
             labels: Vec::new(),
             tasks: Vec::new(),
             filters: Vec::new(),
@@ -182,6 +186,7 @@ impl Store {
                     read_only: true,
                 };
                 store.ensure_inbox();
+                store.lift_legacy_sections();
                 (store, LoadOutcome::ReadOnly { version })
             }
             Ok(document) => {
@@ -191,6 +196,7 @@ impl Store {
                     read_only: false,
                 };
                 store.ensure_inbox();
+                store.lift_legacy_sections();
                 (store, LoadOutcome::Loaded)
             }
             Err(error) => {
@@ -229,6 +235,27 @@ impl Store {
     fn ensure_inbox(&mut self) {
         if !self.document.projects.iter().any(|p| p.is_inbox()) {
             self.document.projects.insert(0, Project::inbox());
+        }
+    }
+
+    /// Lift schema v1's nested sections out into the document's own list.
+    ///
+    /// Runs on every open rather than only when the version says v1: a file
+    /// that has been merged, restored from a backup, or hand-edited can hold
+    /// both shapes, and a section left nested is a board column that silently
+    /// stops existing. Doing it unconditionally costs one pass over the
+    /// projects and cannot be forgotten.
+    fn lift_legacy_sections(&mut self) {
+        for project in self.document.projects.iter_mut() {
+            let project_id = project.id.clone();
+            for legacy in project.legacy_sections.drain(..) {
+                // A section already lifted by an earlier open wins, so reading
+                // a file twice does not double its columns.
+                if self.document.sections.iter().any(|s| s.id == legacy.id) {
+                    continue;
+                }
+                self.document.sections.push(legacy.lift(project_id.clone()));
+            }
         }
     }
 
@@ -355,26 +382,64 @@ impl Store {
         let doomed = self.project_and_descendants(id);
         let projects: Vec<Project> =
             extract(&mut self.document.projects, |p| doomed.contains(&p.id));
+        // Sections are their own records now, so deleting a project has to take
+        // them explicitly. Left behind they would belong to nothing, and would
+        // come back the moment the project did.
+        let sections: Vec<Section> = extract(&mut self.document.sections, |s| {
+            doomed.contains(&s.project_id)
+        });
         let tasks: Vec<Task> =
             extract(&mut self.document.tasks, |t| doomed.contains(&t.project_id));
 
-        Some(RemovedProject { projects, tasks })
+        Some(RemovedProject {
+            projects,
+            sections,
+            tasks,
+        })
     }
 
-    /// Find a section anywhere, and the project it belongs to.
-    pub fn section(&self, id: &SectionId) -> Option<(&Project, &Section)> {
-        self.document
-            .projects
+    // --- sections -------------------------------------------------------
+
+    /// Find a section anywhere.
+    pub fn section(&self, id: &SectionId) -> Option<&Section> {
+        self.document.sections.iter().find(|s| &s.id == id)
+    }
+
+    pub fn section_mut(&mut self, id: &SectionId) -> Option<&mut Section> {
+        self.document.sections.iter_mut().find(|s| &s.id == id)
+    }
+
+    /// A project's sections, in display order.
+    pub fn sections_in(&self, project: &ProjectId) -> Vec<&Section> {
+        let mut sections: Vec<&Section> = self
+            .document
+            .sections
             .iter()
-            .find_map(|project| project.section(id).map(|section| (project, section)))
+            .filter(|section| &section.project_id == project)
+            .collect();
+        sections.sort_by(|a, b| a.order.cmp(&b.order).then_with(|| a.id.cmp(&b.id)));
+        sections
+    }
+
+    /// Add a section at the end of its project's list.
+    pub fn add_section(&mut self, mut section: Section) -> SectionId {
+        let last = self
+            .sections_in(&section.project_id)
+            .last()
+            .map(|existing| existing.order.clone());
+        section.order = Order::between(last.as_ref(), None);
+        let id = section.id.clone();
+        self.document.sections.push(section);
+        id
     }
 
     /// Remove a section, moving its tasks back to the project's own list
     /// rather than deleting them with it. Losing tasks to a tidy-up of columns
     /// is not what anyone means by "delete section".
     pub fn remove_section(&mut self, id: &SectionId, now: DateTime<Utc>) -> Option<RemovedSection> {
-        let project_id = self.section(id).map(|(project, _)| project.id.clone())?;
-        let section = self.project_mut(&project_id)?.remove_section(id)?;
+        let index = self.document.sections.iter().position(|s| &s.id == id)?;
+        let section = self.document.sections.remove(index);
+        let project_id = section.project_id.clone();
 
         let mut tasks = Vec::new();
         for task in self.document.tasks.iter_mut() {
@@ -398,10 +463,12 @@ impl Store {
     /// pressed. Restoring a copy taken at deletion would undo that too.
     pub fn restore_section(&mut self, removed: RemovedSection, now: DateTime<Utc>) {
         let id = removed.section.id.clone();
-        let Some(project) = self.project_mut(&removed.project) else {
+        if self.project(&removed.project).is_none() {
             return;
-        };
-        project.restore_section(removed.section);
+        }
+        // Keeps its own key rather than being appended, so an undone deletion
+        // lands back where it was taken from.
+        self.document.sections.push(removed.section);
 
         for task in self.document.tasks.iter_mut() {
             // A task moved to another project in the meantime keeps its new
@@ -571,9 +638,9 @@ impl Store {
                 .collect(),
             sections: self
                 .document
-                .projects
+                .sections
                 .iter()
-                .flat_map(|project| project.sections.iter().map(|s| s.name.clone()))
+                .map(|section| section.name.clone())
                 .collect(),
             labels: self
                 .document
@@ -620,21 +687,19 @@ impl Store {
             });
 
         let section_id = match parsed.section.as_deref() {
-            Some(name) => self.project(&project_id).and_then(|project| {
-                project
-                    .sections
-                    .iter()
-                    .find(|section| section.name.eq_ignore_ascii_case(name))
-                    .map(|section| section.id.clone())
-            }),
+            Some(name) => self
+                .sections_in(&project_id)
+                .into_iter()
+                .find(|section| section.name.eq_ignore_ascii_case(name))
+                .map(|section| section.id.clone()),
             // A default section only applies in its own project. Carrying it
             // across to a `#project` named on the line would file the task
             // under a section that project does not have.
             None => default_section
                 .filter(|_| parsed.project.is_none())
                 .filter(|id| {
-                    self.project(&project_id)
-                        .is_some_and(|project| project.section(id).is_some())
+                    self.section(id)
+                        .is_some_and(|section| section.project_id == project_id)
                 })
                 .cloned(),
         };
@@ -717,8 +782,8 @@ impl Store {
         }
         if let Some(section) = section {
             let belongs_to_project = self
-                .project(project)
-                .is_some_and(|owner| owner.section(section).is_some());
+                .section(section)
+                .is_some_and(|section| section.project_id == *project);
             if !belongs_to_project {
                 return false;
             }
@@ -765,13 +830,7 @@ impl Store {
 
     /// Rename a section.
     pub fn rename_section(&mut self, id: &SectionId, name: &str) -> bool {
-        let Some(project) = self.section(id).map(|(project, _)| project.id.clone()) else {
-            return false;
-        };
-        match self
-            .project_mut(&project)
-            .and_then(|project| project.section_mut(id))
-        {
+        match self.section_mut(id) {
             Some(section) => {
                 section.name = name.to_string();
                 true
@@ -781,29 +840,32 @@ impl Store {
     }
 
     /// Move a section to a position within its project.
+    ///
+    /// One record changes, for the same reason a moved task changes one — see
+    /// [`crate::order`].
     pub fn move_section(&mut self, id: &SectionId, index: usize) -> bool {
-        let Some(project_id) = self.section(id).map(|(project, _)| project.id.clone()) else {
-            return false;
-        };
-        let Some(project) = self.project_mut(&project_id) else {
+        let Some(project_id) = self.section(id).map(|section| section.project_id.clone()) else {
             return false;
         };
 
-        let mut order: Vec<SectionId> = project
-            .sections_ordered()
+        let neighbours: Vec<Order> = self
+            .sections_in(&project_id)
             .into_iter()
-            .map(|section| section.id.clone())
-            .filter(|other| other != id)
+            .filter(|other| other.id != *id)
+            .map(|section| section.order.clone())
             .collect();
-        let index = index.min(order.len());
-        order.insert(index, id.clone());
 
-        for (position, section) in order.iter().enumerate() {
-            if let Some(section) = project.section_mut(section) {
-                section.order = position as i32;
+        let index = index.min(neighbours.len());
+        let before = index.checked_sub(1).and_then(|i| neighbours.get(i));
+        let landed = Order::between(before, neighbours.get(index));
+
+        match self.section_mut(id) {
+            Some(section) => {
+                section.order = landed;
+                true
             }
+            None => false,
         }
-        true
     }
 
     /// The direct subtasks of a task, in order.
@@ -852,6 +914,7 @@ impl Store {
     /// Put a previously removed project, its subprojects and its tasks back.
     pub fn restore_project(&mut self, removed: RemovedProject) {
         self.document.projects.extend(removed.projects);
+        self.document.sections.extend(removed.sections);
         self.document.tasks.extend(removed.tasks);
     }
 
@@ -928,10 +991,12 @@ impl Store {
     }
 }
 
-/// A deleted project, kept whole so it can be put back.
+/// A deleted project, its sections and its tasks, kept whole so it can be put
+/// back.
 #[derive(Debug)]
 pub struct RemovedProject {
     pub projects: Vec<Project>,
+    pub sections: Vec<Section>,
     pub tasks: Vec<Task>,
 }
 
@@ -1130,6 +1195,61 @@ mod tests {
         assert!(reopened.task(&added).is_some());
     }
 
+    /// v1 kept sections inside their project. They have to come out, or every
+    /// board column in an existing file silently stops existing.
+    #[test]
+    fn a_v1_file_keeps_its_sections_and_the_tasks_filed_under_them() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("planner.json");
+
+        fs::write(
+            &path,
+            r#"{"version":1,"labels":[],"projects":[
+                {"id":"work","name":"Work","sections":[
+                    {"id":"s2","name":"Doing","order":1},
+                    {"id":"s1","name":"Todo","order":0}
+                ]}
+            ],"tasks":[
+                {"id":"t1","content":"Ship it","project_id":"work","section_id":"s2","added_at":"2026-07-01T12:00:00Z","updated_at":"2026-07-01T12:00:00Z","order":0}
+            ]}"#,
+        )
+        .unwrap();
+
+        let (store, outcome) = Store::open_at(&path);
+        assert_eq!(outcome, LoadOutcome::Loaded);
+
+        let work = ProjectId::from_raw("work");
+        let names: Vec<&str> = store
+            .sections_in(&work)
+            .iter()
+            .map(|section| section.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["Todo", "Doing"], "in their v1 order");
+
+        let doing = SectionId::from_raw("s2");
+        assert_eq!(store.section(&doing).unwrap().project_id, work);
+        assert_eq!(
+            store
+                .tasks_in(&work, Some(&doing))
+                .iter()
+                .map(|task| task.content.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Ship it"]
+        );
+
+        // Saving writes them at the top level and leaves nothing nested, so a
+        // second open does not find both shapes and double them.
+        store.save().expect("save");
+        let written = fs::read_to_string(&path).unwrap();
+        assert!(
+            !written.contains(r#""sections":[{"id":"s2""#),
+            "sections must not be written back inside their project"
+        );
+
+        let (reopened, _) = Store::open_at(&path);
+        assert_eq!(reopened.sections_in(&work).len(), 2, "not doubled");
+    }
+
     #[test]
     fn a_file_that_has_lost_its_inbox_gets_one_back() {
         let dir = TempDir::new().unwrap();
@@ -1156,14 +1276,26 @@ mod tests {
         let mut in_child = Task::new(child.clone(), "File the thing", instant(2026, 7, 30));
         in_child.project_id = child.clone();
         store.add_task(in_child);
+        let doomed_section = store.add_section(Section::new(child.clone(), "Doing"));
         let survivor = task(&mut store, "Untouched inbox task");
 
         let removed = store.remove_project(&parent).expect("project was there");
 
         assert_eq!(removed.projects.len(), 2);
         assert_eq!(removed.tasks.len(), 1);
+        // Sections are their own records now, so the cascade has to name them.
+        // Left behind, one would belong to nothing and reappear the moment its
+        // project was restored by an undo.
+        assert_eq!(removed.sections.len(), 1);
+        assert!(store.section(&doomed_section).is_none());
         assert!(store.project(&child).is_none());
         assert!(store.task(&survivor).is_some());
+
+        store.restore_project(removed);
+        assert!(
+            store.section(&doomed_section).is_some(),
+            "undo brings it back"
+        );
     }
 
     #[test]
@@ -1204,10 +1336,7 @@ mod tests {
     fn deleting_a_section_keeps_its_tasks() {
         let (_dir, mut store) = store();
         let project_id = store.add_project(Project::new("Work", Color::Blue));
-        let section = store
-            .project_mut(&project_id)
-            .unwrap()
-            .add_section(Section::new("Doing"));
+        let section = store.add_section(Section::new(project_id.clone(), "Doing"));
 
         let mut task = Task::new(project_id.clone(), "In a column", instant(2026, 7, 30));
         task.section_id = Some(section.clone());
@@ -1224,9 +1353,8 @@ mod tests {
     fn undoing_a_section_deletion_puts_its_tasks_back_in_it() {
         let (_dir, mut store) = store();
         let project_id = store.add_project(Project::new("Work", Color::Blue));
-        let project = store.project_mut(&project_id).unwrap();
-        let first = project.add_section(Section::new("Doing"));
-        let second = project.add_section(Section::new("Done"));
+        let first = store.add_section(Section::new(project_id.clone(), "Doing"));
+        let second = store.add_section(Section::new(project_id.clone(), "Done"));
 
         let mut task = Task::new(project_id.clone(), "In a column", instant(2026, 7, 30));
         task.section_id = Some(first.clone());
@@ -1242,9 +1370,7 @@ mod tests {
             Some(first.clone())
         );
         let order: Vec<&str> = store
-            .project(&project_id)
-            .unwrap()
-            .sections_ordered()
+            .sections_in(&project_id)
             .iter()
             .map(|section| section.name.as_str())
             .collect();
@@ -1253,10 +1379,7 @@ mod tests {
             vec!["Doing", "Done"],
             "an undone deletion goes back where it was, not on the end"
         );
-        assert_eq!(
-            second,
-            store.project(&project_id).unwrap().sections_ordered()[1].id
-        );
+        assert_eq!(second, store.sections_in(&project_id)[1].id);
     }
 
     #[test]
@@ -1264,10 +1387,7 @@ mod tests {
         let (_dir, mut store) = store();
         let work = store.add_project(Project::new("Work", Color::Blue));
         let home = store.add_project(Project::new("Home", Color::Teal));
-        let section = store
-            .project_mut(&work)
-            .unwrap()
-            .add_section(Section::new("Doing"));
+        let section = store.add_section(Section::new(work.clone(), "Doing"));
 
         let mut task = Task::new(work.clone(), "In a column", instant(2026, 7, 30));
         task.section_id = Some(section.clone());
@@ -1494,10 +1614,7 @@ mod tests {
     fn moving_between_sections_closes_the_gap_it_left() {
         let (_dir, mut store) = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        let doing = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Doing"));
+        let doing = store.add_section(Section::new(project.clone(), "Doing"));
 
         let ids: Vec<TaskId> = ["One", "Two", "Three"]
             .iter()
@@ -1595,10 +1712,7 @@ mod tests {
         let (_dir, mut store) = store();
         let work = store.add_project(Project::new("Work", Color::Blue));
         let home = store.add_project(Project::new("Home", Color::Green));
-        let doing = store
-            .project_mut(&work)
-            .unwrap()
-            .add_section(Section::new("Doing"));
+        let doing = store.add_section(Section::new(work.clone(), "Doing"));
 
         let id = store.add_task(Task::new(
             home.clone(),
@@ -1667,26 +1781,15 @@ mod tests {
     fn sections_can_be_renamed_and_reordered() {
         let (_dir, mut store) = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        let a = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("A"));
-        let b = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("B"));
-        let c = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("C"));
+        let a = store.add_section(Section::new(project.clone(), "A"));
+        let b = store.add_section(Section::new(project.clone(), "B"));
+        let c = store.add_section(Section::new(project.clone(), "C"));
 
         assert!(store.rename_section(&b, "Middle"));
         assert!(store.move_section(&c, 0));
 
         let names: Vec<&str> = store
-            .project(&project)
-            .unwrap()
-            .sections_ordered()
+            .sections_in(&project)
             .iter()
             .map(|section| section.name.as_str())
             .collect();
@@ -1698,11 +1801,8 @@ mod tests {
     fn renaming_a_section_that_is_gone_is_refused_rather_than_panicking() {
         let (_dir, mut store) = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        let id = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Doing"));
-        store.project_mut(&project).unwrap().remove_section(&id);
+        let id = store.add_section(Section::new(project.clone(), "Doing"));
+        store.remove_section(&id, instant(2026, 7, 31));
 
         assert!(!store.rename_section(&id, "Anything"));
         assert!(!store.move_section(&id, 0));
@@ -1719,10 +1819,7 @@ mod tests {
     fn a_quick_add_line_becomes_a_task_with_everything_it_named() {
         let (_dir, mut store) = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Admin"));
+        store.add_section(Section::new(project.clone(), "Admin"));
 
         let id = quick_add(&mut store, "Email Sam #Work /Admin @email p2 friday !30m");
         let task = store.task(&id).unwrap();
@@ -1787,10 +1884,7 @@ mod tests {
     fn a_default_section_does_not_follow_a_task_into_another_project() {
         let (_dir, mut store) = store();
         let work = store.add_project(Project::new("Work", Color::Blue));
-        let section = store
-            .project_mut(&work)
-            .unwrap()
-            .add_section(Section::new("Admin"));
+        let section = store.add_section(Section::new(work.clone(), "Admin"));
         let home = store.add_project(Project::new("Home", Color::Green));
 
         // Typed from inside Work's Admin section, but naming another project.
@@ -1813,10 +1907,7 @@ mod tests {
     fn the_vocabulary_carries_every_name_the_parser_needs() {
         let (_dir, mut store) = store();
         let work = store.add_project(Project::new("My Big Project", Color::Blue));
-        store
-            .project_mut(&work)
-            .unwrap()
-            .add_section(Section::new("In Progress"));
+        store.add_section(Section::new(work.clone(), "In Progress"));
         store.label_for_name("high energy");
 
         let vocabulary = store.vocabulary();

@@ -615,7 +615,7 @@ fn apply_move(
     let named = section
         .as_ref()
         .and_then(|id| store.section(id))
-        .map(|(_, section)| section.name.clone());
+        .map(|section| section.name.clone());
     match named {
         Some(name) => applied.push(format!("section → {name}")),
         None if current_section.is_some() => applied.push("section → none".to_string()),
@@ -806,14 +806,14 @@ fn resolve_section(
     reference: &str,
 ) -> Result<SectionId, AgentError> {
     let wanted = reference.trim();
-    let Some(owner) = store.project(project) else {
+    let Some(owner) = store.project(project).map(|owner| owner.name.clone()) else {
         return Err(AgentError::new(
             ErrorKind::NotFound,
             format!("There is no project `{project}` to look for `{wanted}` in."),
         ));
     };
 
-    let sections = owner.sections_ordered();
+    let sections = store.sections_in(project);
     let found = sections
         .iter()
         .find(|section| section.name.eq_ignore_ascii_case(wanted))
@@ -828,12 +828,12 @@ fn resolve_section(
         Some(section) => Ok(section.id.clone()),
         None if sections.is_empty() => Err(AgentError::hinted(
             ErrorKind::NotFound,
-            format!("`{}` has no sections.", owner.name),
+            format!("`{owner}` has no sections."),
             "Sections are created in the app, not from here.",
         )),
         None => Err(AgentError::hinted(
             ErrorKind::NotFound,
-            format!("`{}` has no section called `{wanted}`.", owner.name),
+            format!("`{owner}` has no section called `{wanted}`."),
             format!(
                 "Its sections are: {}.",
                 sections

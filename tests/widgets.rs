@@ -764,14 +764,8 @@ fn widgets() {
     runner.case("every section gets a lane, empty ones included", || {
         let mut store = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        let doing = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Doing"));
-        store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Done"));
+        let doing = store.add_section(Section::new(project.clone(), "Doing"));
+        store.add_section(Section::new(project.clone(), "Done"));
 
         let view = ProjectView::new();
         view.show_project(&project, ViewStyle::Board, &store, today());
@@ -786,10 +780,7 @@ fn widgets() {
     runner.case("tasks land in the lane for their section", || {
         let mut store = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        let doing = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Doing"));
+        let doing = store.add_section(Section::new(project.clone(), "Doing"));
 
         store.add_task(Task::new(project.clone(), "Loose", now()));
         let sorted = store.add_task(Task::new(project.clone(), "In progress", now()));
@@ -813,10 +804,7 @@ fn widgets() {
         || {
             let mut store = store();
             let project = store.add_project(Project::new("Work", Color::Blue));
-            let doing = store
-                .project_mut(&project)
-                .unwrap()
-                .add_section(Section::new("Doing"));
+            let doing = store.add_section(Section::new(project.clone(), "Doing"));
 
             let view = ProjectView::new();
             view.show_project(&project, ViewStyle::List, &store, today());
@@ -846,10 +834,7 @@ fn widgets() {
     runner.case("switching to the board keeps the same lanes", || {
         let mut store = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Doing"));
+        store.add_section(Section::new(project.clone(), "Doing"));
 
         let view = ProjectView::new();
         view.show_project(&project, ViewStyle::List, &store, today());
@@ -876,10 +861,7 @@ fn widgets() {
             view.show_project(&project, ViewStyle::List, &store, today());
             assert_eq!(view.lane_count(), 1);
 
-            store
-                .project_mut(&project)
-                .unwrap()
-                .add_section(Section::new("Doing"));
+            store.add_section(Section::new(project.clone(), "Doing"));
             view.show_project(&project, ViewStyle::List, &store, today());
 
             assert_eq!(view.lane_count(), 2);
@@ -892,10 +874,7 @@ fn widgets() {
         || {
             let mut store = store();
             let project = store.add_project(Project::new("Work", Color::Blue));
-            let doing = store
-                .project_mut(&project)
-                .unwrap()
-                .add_section(Section::new("Doing"));
+            let doing = store.add_section(Section::new(project.clone(), "Doing"));
 
             let view = ProjectView::new();
             view.show_project(&project, ViewStyle::List, &store, today());
@@ -918,10 +897,7 @@ fn widgets() {
     runner.case("removing a section leaves its tasks in the project", || {
         let mut store = store();
         let project = store.add_project(Project::new("Work", Color::Blue));
-        let doing = store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Doing"));
+        let doing = store.add_section(Section::new(project.clone(), "Doing"));
         let id = store.add_task(Task::new(project.clone(), "In progress", now()));
         store.task_mut(&id).unwrap().section_id = Some(doing.clone());
 
@@ -992,10 +968,7 @@ fn widgets() {
 
             // A section added while selecting must not be the one column you
             // cannot select anything in.
-            let doing = store
-                .project_mut(&project)
-                .unwrap()
-                .add_section(Section::new("Doing"));
+            let doing = store.add_section(Section::new(project.clone(), "Doing"));
             view.show_project(&project, ViewStyle::List, &store, today());
 
             assert!(view

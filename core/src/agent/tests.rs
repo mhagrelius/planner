@@ -85,10 +85,7 @@ fn error(store: &mut Store, line: &str) -> AgentError {
 fn a_task_is_added_from_the_same_line_the_dialog_would_take() {
     let (_dir, mut store) = store();
     let work = store.add_project(Project::new("Work", Color::Blue));
-    store
-        .project_mut(&work)
-        .unwrap()
-        .add_section(Section::new("Admin"));
+    store.add_section(Section::new(work.clone(), "Admin"));
 
     let response = json(
         &mut store,
@@ -413,10 +410,7 @@ fn a_query_that_will_not_parse_points_at_the_syntax() {
 fn an_overview_is_enough_to_work_out_what_to_ask_next() {
     let (_dir, mut store) = store();
     let work = store.add_project(Project::new("Work", Color::Blue));
-    store
-        .project_mut(&work)
-        .unwrap()
-        .add_section(Section::new("Admin"));
+    store.add_section(Section::new(work.clone(), "Admin"));
     run(&mut store, "add Overdue thing #Work yesterday").unwrap();
     run(&mut store, "add Due today #Work today @email").unwrap();
     run(&mut store, "add Inbox thing").unwrap();
@@ -576,10 +570,7 @@ fn a_moved_task_takes_its_subtasks_to_the_new_project() {
 fn a_section_is_looked_for_in_the_project_the_task_is_moving_to() {
     let (_dir, mut store) = store();
     let work = store.add_project(Project::new("Work", Color::Blue));
-    store
-        .project_mut(&work)
-        .unwrap()
-        .add_section(Section::new("Doing"));
+    store.add_section(Section::new(work.clone(), "Doing"));
     run(&mut store, "add Email Sam").unwrap();
 
     let response = json(&mut store, "update Email project=Work section=Doing");
@@ -592,10 +583,7 @@ fn a_section_is_looked_for_in_the_project_the_task_is_moving_to() {
 fn a_section_the_project_does_not_have_lists_the_ones_it_does() {
     let (_dir, mut store) = store();
     let work = store.add_project(Project::new("Work", Color::Blue));
-    store
-        .project_mut(&work)
-        .unwrap()
-        .add_section(Section::new("Doing"));
+    store.add_section(Section::new(work.clone(), "Doing"));
     run(&mut store, "add Email Sam #Work").unwrap();
 
     let error = error(&mut store, "update Email section=Blocked");

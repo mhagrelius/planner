@@ -48,10 +48,7 @@ fn a_days_work_survives_being_closed_and_reopened() {
         assert_eq!(outcome, LoadOutcome::Fresh);
 
         let project = store.add_project(Project::new("Work", Color::Blue));
-        store
-            .project_mut(&project)
-            .unwrap()
-            .add_section(Section::new("Admin"));
+        store.add_section(Section::new(project.clone(), "Admin"));
 
         let a = quick_add(
             &mut store,

@@ -629,8 +629,8 @@ impl PlannerApplication {
     /// Add a section to a project.
     pub fn add_section(&self, project: &crate::model::ProjectId, name: &str) {
         self.mutate(|store| {
-            if let Some(project) = store.project_mut(project) {
-                project.add_section(crate::model::Section::new(name));
+            if store.project(project).is_some() {
+                store.add_section(crate::model::Section::new(project.clone(), name));
             }
         });
         self.refresh();

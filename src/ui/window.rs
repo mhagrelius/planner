@@ -1249,8 +1249,7 @@ impl PlannerWindow {
         let Some(app) = self.planner_application() else {
             return;
         };
-        let Some(current) =
-            app.with_store(|store| store.section(section).map(|(_, s)| s.name.clone()))
+        let Some(current) = app.with_store(|store| store.section(section).map(|s| s.name.clone()))
         else {
             return;
         };
@@ -1277,8 +1276,7 @@ impl PlannerWindow {
         let Some(app) = self.planner_application() else {
             return;
         };
-        let Some(name) =
-            app.with_store(|store| store.section(section).map(|(_, s)| s.name.clone()))
+        let Some(name) = app.with_store(|store| store.section(section).map(|s| s.name.clone()))
         else {
             return;
         };

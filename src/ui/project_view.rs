@@ -135,14 +135,14 @@ impl ProjectView {
         let Some(lanes) = imp.lanes.borrow().clone() else {
             return;
         };
-        let Some(owner) = store.project(project) else {
+        if store.project(project).is_none() {
             return;
-        };
+        }
 
         let sections: Vec<(Option<SectionId>, String)> = std::iter::once((None, String::new()))
             .chain(
-                owner
-                    .sections_ordered()
+                store
+                    .sections_in(project)
                     .into_iter()
                     .map(|section| (Some(section.id.clone()), section.name.clone())),
             )

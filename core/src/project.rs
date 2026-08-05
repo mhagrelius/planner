@@ -1,18 +1,21 @@
 //! Projects, sections and labels.
 //!
-//! Sections are stored *inside* their project rather than in a flat list with
-//! a project ID. A section has no meaning apart from its project, no view
-//! shows sections across projects, and deleting a project must take its
-//! sections with it — nesting makes all three true by construction instead of
-//! by remembering.
+//! Sections were stored *inside* their project until schema v2, because a
+//! section has no meaning apart from its project and nesting made the deletion
+//! cascade true by construction rather than by remembering. Sync is what
+//! changed the answer: nested, two machines each adding a section were two
+//! edits to one project record, and merging them kept one and lost the other.
+//! They are their own records now, and [`crate::store::Store::remove_project`]
+//! carries the cascade the nesting used to.
 //!
-//! Labels are the opposite: they are deliberately global and flat, because
-//! their whole purpose is to cut across the project tree.
+//! Labels are flat for a different reason and always were: their whole purpose
+//! is to cut across the project tree.
 
 use serde::{Deserialize, Serialize};
 
 use super::color::Color;
 use super::id::{FilterId, LabelId, ProjectId, SectionId};
+use super::order::Order;
 
 /// How a project's tasks are laid out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -39,23 +42,61 @@ pub enum SortBy {
 }
 
 /// A named group of tasks within a project. A board column.
+///
+/// A record in its own right rather than a field of its project, which it was
+/// until schema v2. Nested, a section added here and a section added on another
+/// machine were two edits to the same project record, and merging them by
+/// last-writer-wins kept one and silently dropped the other. Given an id and a
+/// `project_id` it syncs like everything else, and two machines adding a
+/// section each end up with both.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Section {
     pub id: SectionId,
+    pub project_id: ProjectId,
     pub name: String,
     #[serde(default, skip_serializing_if = "is_false")]
     pub collapsed: bool,
     #[serde(default)]
-    pub order: i32,
+    pub order: Order,
 }
 
 impl Section {
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new(project_id: ProjectId, name: impl Into<String>) -> Self {
         Self {
             id: SectionId::new(),
+            project_id,
             name: name.into(),
             collapsed: false,
-            order: 0,
+            order: Order::start(),
+        }
+    }
+}
+
+/// A section as schema v1 wrote it: inside its project, with no `project_id`
+/// because its position in the file was the answer.
+///
+/// Read-only and never written. [`Store::open_at`](crate::store::Store::open_at)
+/// lifts these out into the document's own list, after which the next save
+/// leaves no trace of them.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct LegacySection {
+    pub id: SectionId,
+    pub name: String,
+    #[serde(default)]
+    pub collapsed: bool,
+    #[serde(default)]
+    pub order: Order,
+}
+
+impl LegacySection {
+    /// The same section, told which project it was found in.
+    pub fn lift(self, project_id: ProjectId) -> Section {
+        Section {
+            id: self.id,
+            project_id,
+            name: self.name,
+            collapsed: self.collapsed,
+            order: self.order,
         }
     }
 }
@@ -71,8 +112,12 @@ pub struct Project {
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<ProjectId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sections: Vec<Section>,
+
+    /// Sections found nested inside this project by a schema v1 file, waiting
+    /// to be lifted out. Always empty once the store has opened, and never
+    /// written back.
+    #[serde(default, rename = "sections", skip_serializing)]
+    pub legacy_sections: Vec<LegacySection>,
 
     #[serde(default, skip_serializing_if = "is_false")]
     pub is_favorite: bool,
@@ -103,7 +148,7 @@ impl Project {
             color,
             description: String::new(),
             parent_id: None,
-            sections: Vec::new(),
+            legacy_sections: Vec::new(),
             is_favorite: false,
             is_archived: false,
             collapsed: false,
@@ -130,51 +175,6 @@ impl Project {
     /// Whether this is the Inbox.
     pub fn is_inbox(&self) -> bool {
         self.id.is_inbox()
-    }
-
-    /// Find one of this project's sections.
-    pub fn section(&self, id: &SectionId) -> Option<&Section> {
-        self.sections.iter().find(|section| &section.id == id)
-    }
-
-    pub fn section_mut(&mut self, id: &SectionId) -> Option<&mut Section> {
-        self.sections.iter_mut().find(|section| &section.id == id)
-    }
-
-    /// Add a section at the end.
-    pub fn add_section(&mut self, mut section: Section) -> SectionId {
-        section.order = self
-            .sections
-            .iter()
-            .map(|existing| existing.order)
-            .max()
-            .map_or(0, |max| max + 1);
-        let id = section.id.clone();
-        self.sections.push(section);
-        id
-    }
-
-    /// Remove a section, returning it. The caller is responsible for the tasks
-    /// that pointed at it — the project has no way to reach them.
-    pub fn remove_section(&mut self, id: &SectionId) -> Option<Section> {
-        let index = self.sections.iter().position(|section| &section.id == id)?;
-        Some(self.sections.remove(index))
-    }
-
-    /// Put a removed section back where it was.
-    ///
-    /// Unlike [`add_section`](Self::add_section) this keeps the section's own
-    /// `order`, so an undone deletion lands in the place it was deleted from
-    /// rather than at the end.
-    pub fn restore_section(&mut self, section: Section) {
-        self.sections.push(section);
-    }
-
-    /// Sections in display order.
-    pub fn sections_ordered(&self) -> Vec<&Section> {
-        let mut sections: Vec<&Section> = self.sections.iter().collect();
-        sections.sort_by_key(|section| section.order);
-        sections
     }
 }
 
@@ -253,50 +253,6 @@ mod tests {
     }
 
     #[test]
-    fn sections_are_appended_in_order() {
-        let mut project = Project::new("Work", Color::Blue);
-        project.add_section(Section::new("Todo"));
-        project.add_section(Section::new("Doing"));
-        let last = project.add_section(Section::new("Done"));
-
-        let names: Vec<&str> = project
-            .sections_ordered()
-            .iter()
-            .map(|section| section.name.as_str())
-            .collect();
-        assert_eq!(names, vec!["Todo", "Doing", "Done"]);
-        assert_eq!(project.section(&last).unwrap().name, "Done");
-    }
-
-    #[test]
-    fn a_removed_section_comes_back_so_it_can_be_undone() {
-        let mut project = Project::new("Work", Color::Blue);
-        let id = project.add_section(Section::new("Doing"));
-
-        let removed = project.remove_section(&id).expect("section was there");
-        assert_eq!(removed.name, "Doing");
-        assert!(project.section(&id).is_none());
-        assert_eq!(project.remove_section(&id), None);
-    }
-
-    #[test]
-    fn reusing_an_order_slot_after_a_removal_does_not_collide() {
-        let mut project = Project::new("Work", Color::Blue);
-        project.add_section(Section::new("A"));
-        let b = project.add_section(Section::new("B"));
-        project.remove_section(&b);
-        project.add_section(Section::new("C"));
-
-        let orders: Vec<i32> = project
-            .sections
-            .iter()
-            .map(|section| section.order)
-            .collect();
-        let unique: std::collections::HashSet<_> = orders.iter().collect();
-        assert_eq!(orders.len(), unique.len(), "orders must stay distinct");
-    }
-
-    #[test]
     fn label_names_match_regardless_of_case() {
         let label = Label::new("Work", Color::Blue);
         assert!(label.matches_name("work"));
@@ -307,7 +263,6 @@ mod tests {
     #[test]
     fn a_project_round_trips_through_json() {
         let mut project = Project::new("Work", Color::Teal);
-        project.add_section(Section::new("Doing"));
         project.view_style = ViewStyle::Board;
         project.sort_by = SortBy::Priority;
         project.is_favorite = true;

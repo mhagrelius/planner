@@ -277,14 +277,8 @@ fn seeded() -> Store {
     store.complete_task(&done, now, today);
 
     // A project with sections, so the board has columns worth looking at.
-    let doing = store
-        .project_mut(&work)
-        .unwrap()
-        .add_section(Section::new("In progress"));
-    let blocked = store
-        .project_mut(&work)
-        .unwrap()
-        .add_section(Section::new("Blocked"));
+    let doing = store.add_section(Section::new(work.clone(), "In progress"));
+    let blocked = store.add_section(Section::new(work.clone(), "Blocked"));
     for (line, section) in [
         ("Draft the Q3 report p1 tomorrow", Some(&doing)),
         ("Review the contract @legal", Some(&doing)),
