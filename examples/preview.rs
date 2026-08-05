@@ -236,11 +236,11 @@ fn seeded() -> Store {
     let today = today();
     let now = chrono::Utc::now();
 
-    let work = store.add_project(Project::new("Work", Color::Blue));
+    let work = store.add_project(Project::new("Work", Color::Blue), now);
     let mut admin = Project::new("Admin", Color::Teal);
     admin.parent_id = Some(work.clone());
-    store.add_project(admin);
-    store.add_project(Project::new("Home", Color::Green));
+    store.add_project(admin, now);
+    store.add_project(Project::new("Home", Color::Green), now);
 
     for line in [
         "Email Sam about the lease @email p1 today 9am",
@@ -277,8 +277,8 @@ fn seeded() -> Store {
     store.complete_task(&done, now, today);
 
     // A project with sections, so the board has columns worth looking at.
-    let doing = store.add_section(Section::new(work.clone(), "In progress"));
-    let blocked = store.add_section(Section::new(work.clone(), "Blocked"));
+    let doing = store.add_section(Section::new(work.clone(), "In progress"), now);
+    let blocked = store.add_section(Section::new(work.clone(), "Blocked"), now);
     for (line, section) in [
         ("Draft the Q3 report p1 tomorrow", Some(&doing)),
         ("Review the contract @legal", Some(&doing)),

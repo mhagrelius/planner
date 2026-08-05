@@ -245,7 +245,7 @@ pub fn execute(
             let colour = store.next_project_color();
             let mut project = Project::new(name.trim(), colour);
             project.parent_id = parent;
-            let id = store.add_project(project);
+            let id = store.add_project(project, now);
             Ok(Response::ProjectAdded {
                 project: view::ProjectView::of(store, store.project(&id).expect("just added")),
             })
@@ -471,7 +471,7 @@ fn update(
             Change::Project(name) => destination = Some(resolve_project(store, name)?),
             Change::Section(name) => section = Some(name.clone()),
             Change::AddLabel(name) => {
-                let label = store.label_for_name(name);
+                let label = store.label_for_name(name, now);
                 let task = store.task_mut(&id).expect("just resolved");
                 if !task.has_label(&label) {
                     task.add_label(label);

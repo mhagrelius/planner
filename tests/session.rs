@@ -47,8 +47,8 @@ fn a_days_work_survives_being_closed_and_reopened() {
         let (mut store, outcome) = Store::open_at(&path);
         assert_eq!(outcome, LoadOutcome::Fresh);
 
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        store.add_section(Section::new(project.clone(), "Admin"));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        store.add_section(Section::new(project.clone(), "Admin"), instant(2026, 7, 30));
 
         let a = quick_add(
             &mut store,
@@ -147,10 +147,10 @@ fn the_built_in_views_hold_up_on_a_realistic_store() {
     let today = date(2026, 7, 30);
     let now = instant(2026, 7, 30);
 
-    let work = store.add_project(Project::new("Work", Color::Blue));
+    let work = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
     let mut admin = Project::new("Admin", Color::Teal);
     admin.parent_id = Some(work.clone());
-    store.add_project(admin);
+    store.add_project(admin, instant(2026, 7, 30));
 
     quick_add(&mut store, "Renew passport today p1", today, now);
     quick_add(&mut store, "Call the bank tomorrow", today, now);
@@ -286,10 +286,10 @@ fn deleting_a_project_and_undoing_it_restores_every_task() {
     let today = date(2026, 7, 30);
 
     let (mut store, _) = Store::open_at(&path);
-    let work = store.add_project(Project::new("Work", Color::Blue));
+    let work = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
     let mut admin = Project::new("Admin", Color::Teal);
     admin.parent_id = Some(work.clone());
-    store.add_project(admin);
+    store.add_project(admin, instant(2026, 7, 30));
 
     quick_add(&mut store, "In work #Work", today, instant(2026, 7, 30));
     quick_add(&mut store, "In admin #Admin", today, instant(2026, 7, 30));

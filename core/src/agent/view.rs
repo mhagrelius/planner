@@ -473,9 +473,9 @@ mod tests {
     #[test]
     fn a_view_names_what_the_record_only_points_at() {
         let mut store = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        let section = store.add_section(Section::new(project.clone(), "Admin"));
-        let label = store.label_for_name("email");
+        let project = store.add_project(Project::new("Work", Color::Blue), now());
+        let section = store.add_section(Section::new(project.clone(), "Admin"), now());
+        let label = store.label_for_name("email", now());
 
         let mut task = Task::new(project, "Email Sam", now());
         task.section_id = Some(section);

@@ -11,11 +11,23 @@
 //! Labels are flat for a different reason and always were: their whole purpose
 //! is to cut across the project tree.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::color::Color;
 use super::id::{FilterId, LabelId, ProjectId, SectionId};
 use super::order::Order;
+
+/// When a record was last changed, for a file written before the field
+/// existed.
+///
+/// The epoch rather than "now": a record nobody has touched since this build
+/// must lose to any real edit on another machine, and dating it from the
+/// moment it happened to be read would make the last machine to open the file
+/// win an argument it was not part of.
+pub(crate) fn epoch() -> DateTime<Utc> {
+    DateTime::from_timestamp(0, 0).expect("the epoch is a valid instant")
+}
 
 /// How a project's tasks are laid out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -58,6 +70,8 @@ pub struct Section {
     pub collapsed: bool,
     #[serde(default)]
     pub order: Order,
+    #[serde(default = "epoch")]
+    pub updated_at: DateTime<Utc>,
 }
 
 impl Section {
@@ -68,7 +82,12 @@ impl Section {
             name: name.into(),
             collapsed: false,
             order: Order::start(),
+            updated_at: epoch(),
         }
+    }
+
+    pub fn touch(&mut self, now: DateTime<Utc>) {
+        self.updated_at = now;
     }
 }
 
@@ -97,6 +116,10 @@ impl LegacySection {
             name: self.name,
             collapsed: self.collapsed,
             order: self.order,
+            // A v1 file predates the field, so the section reads as untouched
+            // since the epoch. Any real edit anywhere beats it, which is right:
+            // nobody has changed it since this build learned to notice.
+            updated_at: epoch(),
         }
     }
 }
@@ -134,6 +157,8 @@ pub struct Project {
     pub show_completed: bool,
     #[serde(default)]
     pub order: i32,
+    #[serde(default = "epoch")]
+    pub updated_at: DateTime<Utc>,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -156,7 +181,12 @@ impl Project {
             sort_by: SortBy::default(),
             show_completed: false,
             order: 0,
+            updated_at: epoch(),
         }
+    }
+
+    pub fn touch(&mut self, now: DateTime<Utc>) {
+        self.updated_at = now;
     }
 
     /// The Inbox: where a task with no stated project goes.
@@ -191,6 +221,8 @@ pub struct Label {
     pub is_favorite: bool,
     #[serde(default)]
     pub order: i32,
+    #[serde(default = "epoch")]
+    pub updated_at: DateTime<Utc>,
 }
 
 /// A query the user saved and named.
@@ -208,6 +240,8 @@ pub struct SavedFilter {
     pub color: Color,
     #[serde(default)]
     pub order: i32,
+    #[serde(default = "epoch")]
+    pub updated_at: DateTime<Utc>,
 }
 
 impl SavedFilter {
@@ -218,7 +252,12 @@ impl SavedFilter {
             query: query.into(),
             color,
             order: 0,
+            updated_at: epoch(),
         }
+    }
+
+    pub fn touch(&mut self, now: DateTime<Utc>) {
+        self.updated_at = now;
     }
 }
 
@@ -230,7 +269,12 @@ impl Label {
             color,
             is_favorite: false,
             order: 0,
+            updated_at: epoch(),
         }
+    }
+
+    pub fn touch(&mut self, now: DateTime<Utc>) {
+        self.updated_at = now;
     }
 
     /// Whether this label answers to a name typed in quick-add.

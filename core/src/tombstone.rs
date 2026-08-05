@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 /// Ids are unique across kinds in practice, but sync applies deletions per
 /// kind and an untyped id would make that a search of five lists hoping for
 /// exactly one hit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RecordKind {
     Task,

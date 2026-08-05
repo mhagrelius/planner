@@ -878,7 +878,7 @@ mod tests {
     #[test]
     fn labels_match_by_name_regardless_of_case() {
         let mut store = store();
-        let label = store.label_for_name("Errand");
+        let label = store.label_for_name("Errand", now());
         let id = task(&mut store, "Post office");
         task(&mut store, "Something else");
         store.task_mut(&id).unwrap().add_label(label);
@@ -891,10 +891,10 @@ mod tests {
     #[test]
     fn one_hash_stays_out_of_subprojects_and_two_reach_in() {
         let mut store = store();
-        let parent = store.add_project(Project::new("Work", Color::Blue));
+        let parent = store.add_project(Project::new("Work", Color::Blue), now());
         let mut child_project = Project::new("Admin", Color::Teal);
         child_project.parent_id = Some(parent.clone());
-        let child = store.add_project(child_project);
+        let child = store.add_project(child_project, now());
 
         store.add_task(Task::new(parent.clone(), "In Work", now()));
         store.add_task(Task::new(child, "In Admin", now()));
@@ -913,8 +913,8 @@ mod tests {
     #[test]
     fn sections_match_by_name() {
         let mut store = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        let section = store.add_section(Section::new(project.clone(), "Doing"));
+        let project = store.add_project(Project::new("Work", Color::Blue), now());
+        let section = store.add_section(Section::new(project.clone(), "Doing"), now());
 
         let mut in_section = Task::new(project.clone(), "In progress", now());
         in_section.section_id = Some(section);
@@ -943,7 +943,7 @@ mod tests {
         let mut store = store();
         let a = task(&mut store, "Urgent errand");
         let b = task(&mut store, "Urgent desk job");
-        let label = store.label_for_name("errand");
+        let label = store.label_for_name("errand", now());
         store.task_mut(&a).unwrap().priority = Priority::P1;
         store.task_mut(&a).unwrap().add_label(label);
         store.task_mut(&b).unwrap().priority = Priority::P1;

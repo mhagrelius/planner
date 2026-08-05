@@ -402,7 +402,8 @@ impl Store {
     }
 
     /// Add a project, giving it the next free colour if it has none of its own.
-    pub fn add_project(&mut self, mut project: Project) -> ProjectId {
+    pub fn add_project(&mut self, mut project: Project, now: DateTime<Utc>) -> ProjectId {
+        project.touch(now);
         project.order = self
             .document
             .projects
@@ -474,6 +475,11 @@ impl Store {
         self.document.sections.iter_mut().find(|s| &s.id == id)
     }
 
+    /// Every section, of every project.
+    pub fn sections(&self) -> &[Section] {
+        &self.document.sections
+    }
+
     /// A project's sections, in display order.
     pub fn sections_in(&self, project: &ProjectId) -> Vec<&Section> {
         let mut sections: Vec<&Section> = self
@@ -487,7 +493,8 @@ impl Store {
     }
 
     /// Add a section at the end of its project's list.
-    pub fn add_section(&mut self, mut section: Section) -> SectionId {
+    pub fn add_section(&mut self, mut section: Section, now: DateTime<Utc>) -> SectionId {
+        section.touch(now);
         let last = self
             .sections_in(&section.project_id)
             .last()
@@ -579,13 +586,14 @@ impl Store {
     ///
     /// Quick-add types labels rather than picking them, so `@errand` has to
     /// mean "the errand label" whether or not it existed a moment ago.
-    pub fn label_for_name(&mut self, name: &str) -> LabelId {
+    pub fn label_for_name(&mut self, name: &str, now: DateTime<Utc>) -> LabelId {
         if let Some(existing) = self.label_by_name(name) {
             return existing.id.clone();
         }
         let used: Vec<Color> = self.document.labels.iter().map(|l| l.color).collect();
         let mut label = Label::new(name, color::least_used(&used));
         label.order = self.document.labels.len() as i32;
+        label.touch(now);
         let id = label.id.clone();
         self.unmark(RecordKind::Label, id.as_str());
         self.document.labels.push(label);
@@ -625,7 +633,8 @@ impl Store {
     }
 
     /// Save a filter, or replace one with the same ID.
-    pub fn put_filter(&mut self, filter: SavedFilter) -> FilterId {
+    pub fn put_filter(&mut self, mut filter: SavedFilter, now: DateTime<Utc>) -> FilterId {
+        filter.touch(now);
         let id = filter.id.clone();
         // This is the undo path as well as the create path, so it is where a
         // deleted filter comes back.
@@ -783,7 +792,7 @@ impl Store {
         let labels: Vec<LabelId> = parsed
             .labels
             .iter()
-            .map(|name| self.label_for_name(name))
+            .map(|name| self.label_for_name(name, now))
             .collect();
 
         let mut task = Task::new(project_id, parsed.title.trim(), now);
@@ -905,10 +914,11 @@ impl Store {
     }
 
     /// Rename a section.
-    pub fn rename_section(&mut self, id: &SectionId, name: &str) -> bool {
+    pub fn rename_section(&mut self, id: &SectionId, name: &str, now: DateTime<Utc>) -> bool {
         match self.section_mut(id) {
             Some(section) => {
                 section.name = name.to_string();
+                section.touch(now);
                 true
             }
             None => false,
@@ -919,7 +929,7 @@ impl Store {
     ///
     /// One record changes, for the same reason a moved task changes one — see
     /// [`crate::order`].
-    pub fn move_section(&mut self, id: &SectionId, index: usize) -> bool {
+    pub fn move_section(&mut self, id: &SectionId, index: usize, now: DateTime<Utc>) -> bool {
         let Some(project_id) = self.section(id).map(|section| section.project_id.clone()) else {
             return false;
         };
@@ -938,6 +948,7 @@ impl Store {
         match self.section_mut(id) {
             Some(section) => {
                 section.order = landed;
+                section.touch(now);
                 true
             }
             None => false,
@@ -1363,15 +1374,16 @@ mod tests {
     #[test]
     fn deleting_a_project_takes_its_subprojects_and_their_tasks() {
         let (_dir, mut store) = store();
-        let parent = store.add_project(Project::new("Work", Color::Blue));
+        let parent = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
         let mut child = Project::new("Admin", Color::Teal);
         child.parent_id = Some(parent.clone());
-        let child = store.add_project(child);
+        let child = store.add_project(child, instant(2026, 7, 30));
 
         let mut in_child = Task::new(child.clone(), "File the thing", instant(2026, 7, 30));
         in_child.project_id = child.clone();
         store.add_task(in_child);
-        let doomed_section = store.add_section(Section::new(child.clone(), "Doing"));
+        let doomed_section =
+            store.add_section(Section::new(child.clone(), "Doing"), instant(2026, 7, 30));
         let survivor = task(&mut store, "Untouched inbox task");
 
         let removed = store
@@ -1455,8 +1467,9 @@ mod tests {
     #[test]
     fn deleting_a_project_marks_its_sections_and_tasks_individually() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        let section = store.add_section(Section::new(project.clone(), "Doing"));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        let section =
+            store.add_section(Section::new(project.clone(), "Doing"), instant(2026, 7, 30));
         let inside = store.add_task(Task::new(project.clone(), "Ship it", instant(2026, 7, 30)));
 
         let removed = store
@@ -1485,7 +1498,7 @@ mod tests {
     #[test]
     fn a_deleted_project_can_be_put_back_whole() {
         let (_dir, mut store) = store();
-        let id = store.add_project(Project::new("Work", Color::Blue));
+        let id = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
         let mut task = Task::new(id.clone(), "Something", instant(2026, 7, 30));
         task.project_id = id.clone();
         let task_id = store.add_task(task);
@@ -1500,8 +1513,8 @@ mod tests {
     #[test]
     fn a_cyclic_project_tree_does_not_hang_the_walk() {
         let (_dir, mut store) = store();
-        let a = store.add_project(Project::new("A", Color::Blue));
-        let b = store.add_project(Project::new("B", Color::Teal));
+        let a = store.add_project(Project::new("A", Color::Blue), instant(2026, 7, 30));
+        let b = store.add_project(Project::new("B", Color::Teal), instant(2026, 7, 30));
         store.project_mut(&a).unwrap().parent_id = Some(b.clone());
         store.project_mut(&b).unwrap().parent_id = Some(a.clone());
 
@@ -1512,8 +1525,11 @@ mod tests {
     #[test]
     fn deleting_a_section_keeps_its_tasks() {
         let (_dir, mut store) = store();
-        let project_id = store.add_project(Project::new("Work", Color::Blue));
-        let section = store.add_section(Section::new(project_id.clone(), "Doing"));
+        let project_id = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        let section = store.add_section(
+            Section::new(project_id.clone(), "Doing"),
+            instant(2026, 7, 30),
+        );
 
         let mut task = Task::new(project_id.clone(), "In a column", instant(2026, 7, 30));
         task.section_id = Some(section.clone());
@@ -1529,9 +1545,15 @@ mod tests {
     #[test]
     fn undoing_a_section_deletion_puts_its_tasks_back_in_it() {
         let (_dir, mut store) = store();
-        let project_id = store.add_project(Project::new("Work", Color::Blue));
-        let first = store.add_section(Section::new(project_id.clone(), "Doing"));
-        let second = store.add_section(Section::new(project_id.clone(), "Done"));
+        let project_id = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        let first = store.add_section(
+            Section::new(project_id.clone(), "Doing"),
+            instant(2026, 7, 30),
+        );
+        let second = store.add_section(
+            Section::new(project_id.clone(), "Done"),
+            instant(2026, 7, 30),
+        );
 
         let mut task = Task::new(project_id.clone(), "In a column", instant(2026, 7, 30));
         task.section_id = Some(first.clone());
@@ -1562,9 +1584,9 @@ mod tests {
     #[test]
     fn a_task_that_moved_project_is_not_dragged_back_by_an_undo() {
         let (_dir, mut store) = store();
-        let work = store.add_project(Project::new("Work", Color::Blue));
-        let home = store.add_project(Project::new("Home", Color::Teal));
-        let section = store.add_section(Section::new(work.clone(), "Doing"));
+        let work = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        let home = store.add_project(Project::new("Home", Color::Teal), instant(2026, 7, 30));
+        let section = store.add_section(Section::new(work.clone(), "Doing"), instant(2026, 7, 30));
 
         let mut task = Task::new(work.clone(), "In a column", instant(2026, 7, 30));
         task.section_id = Some(section.clone());
@@ -1584,7 +1606,7 @@ mod tests {
     #[test]
     fn deleting_a_label_takes_it_off_every_task() {
         let (_dir, mut store) = store();
-        let label = store.label_for_name("errand");
+        let label = store.label_for_name("errand", instant(2026, 7, 30));
         let a = task(&mut store, "One");
         let b = task(&mut store, "Two");
         store.task_mut(&a).unwrap().add_label(label.clone());
@@ -1600,8 +1622,8 @@ mod tests {
     #[test]
     fn a_label_typed_twice_is_the_same_label() {
         let (_dir, mut store) = store();
-        let first = store.label_for_name("Errand");
-        let second = store.label_for_name("errand");
+        let first = store.label_for_name("Errand", instant(2026, 7, 30));
+        let second = store.label_for_name("errand", instant(2026, 7, 30));
         assert_eq!(first, second);
         assert_eq!(store.labels().len(), 1);
     }
@@ -1692,7 +1714,7 @@ mod tests {
     #[test]
     fn label_counts_ignore_completed_tasks() {
         let (_dir, mut store) = store();
-        let label = store.label_for_name("errand");
+        let label = store.label_for_name("errand", instant(2026, 7, 30));
         let a = task(&mut store, "One");
         let b = task(&mut store, "Two");
         store.task_mut(&a).unwrap().add_label(label.clone());
@@ -1706,7 +1728,7 @@ mod tests {
     #[test]
     fn new_tasks_go_to_the_end_of_their_own_list() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
 
         let first = task(&mut store, "Inbox one");
         let second = task(&mut store, "Inbox two");
@@ -1790,8 +1812,8 @@ mod tests {
     #[test]
     fn moving_between_sections_closes_the_gap_it_left() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        let doing = store.add_section(Section::new(project.clone(), "Doing"));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        let doing = store.add_section(Section::new(project.clone(), "Doing"), instant(2026, 7, 30));
 
         let ids: Vec<TaskId> = ["One", "Two", "Three"]
             .iter()
@@ -1821,7 +1843,7 @@ mod tests {
     #[test]
     fn moving_a_task_rewrites_that_task_and_no_other() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
         let ids: Vec<TaskId> = ["One", "Two", "Three", "Four"]
             .iter()
             .map(|name| store.add_task(Task::new(project.clone(), *name, instant(2026, 7, 30))))
@@ -1861,7 +1883,7 @@ mod tests {
     #[test]
     fn a_moved_task_takes_its_subtasks_to_the_new_project() {
         let (_dir, mut store) = store();
-        let work = store.add_project(Project::new("Work", Color::Blue));
+        let work = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
 
         let parent = store.add_task(Task::new(
             ProjectId::inbox(),
@@ -1887,9 +1909,9 @@ mod tests {
     #[test]
     fn a_section_from_another_project_is_refused() {
         let (_dir, mut store) = store();
-        let work = store.add_project(Project::new("Work", Color::Blue));
-        let home = store.add_project(Project::new("Home", Color::Green));
-        let doing = store.add_section(Section::new(work.clone(), "Doing"));
+        let work = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        let home = store.add_project(Project::new("Home", Color::Green), instant(2026, 7, 30));
+        let doing = store.add_section(Section::new(work.clone(), "Doing"), instant(2026, 7, 30));
 
         let id = store.add_task(Task::new(
             home.clone(),
@@ -1908,7 +1930,7 @@ mod tests {
     #[test]
     fn moving_to_a_project_that_is_gone_is_refused() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
         store.remove_project(&project, instant(2026, 7, 31));
         let id = store.add_task(Task::new(
             ProjectId::inbox(),
@@ -1957,13 +1979,13 @@ mod tests {
     #[test]
     fn sections_can_be_renamed_and_reordered() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        let a = store.add_section(Section::new(project.clone(), "A"));
-        let b = store.add_section(Section::new(project.clone(), "B"));
-        let c = store.add_section(Section::new(project.clone(), "C"));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        let a = store.add_section(Section::new(project.clone(), "A"), instant(2026, 7, 30));
+        let b = store.add_section(Section::new(project.clone(), "B"), instant(2026, 7, 30));
+        let c = store.add_section(Section::new(project.clone(), "C"), instant(2026, 7, 30));
 
-        assert!(store.rename_section(&b, "Middle"));
-        assert!(store.move_section(&c, 0));
+        assert!(store.rename_section(&b, "Middle", instant(2026, 7, 30)));
+        assert!(store.move_section(&c, 0, instant(2026, 7, 30)));
 
         let names: Vec<&str> = store
             .sections_in(&project)
@@ -1977,12 +1999,12 @@ mod tests {
     #[test]
     fn renaming_a_section_that_is_gone_is_refused_rather_than_panicking() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        let id = store.add_section(Section::new(project.clone(), "Doing"));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        let id = store.add_section(Section::new(project.clone(), "Doing"), instant(2026, 7, 30));
         store.remove_section(&id, instant(2026, 7, 31));
 
-        assert!(!store.rename_section(&id, "Anything"));
-        assert!(!store.move_section(&id, 0));
+        assert!(!store.rename_section(&id, "Anything", instant(2026, 7, 30)));
+        assert!(!store.move_section(&id, 0, instant(2026, 7, 30)));
     }
 
     // --- quick add ------------------------------------------------------
@@ -1995,8 +2017,8 @@ mod tests {
     #[test]
     fn a_quick_add_line_becomes_a_task_with_everything_it_named() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        store.add_section(Section::new(project.clone(), "Admin"));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        store.add_section(Section::new(project.clone(), "Admin"), instant(2026, 7, 30));
 
         let id = quick_add(&mut store, "Email Sam #Work /Admin @email p2 friday !30m");
         let task = store.task(&id).unwrap();
@@ -2023,7 +2045,7 @@ mod tests {
     #[test]
     fn a_project_that_does_not_exist_is_not_created_by_a_typo() {
         let (_dir, mut store) = store();
-        store.add_project(Project::new("Work", Color::Blue));
+        store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
 
         let id = quick_add(&mut store, "Something #Wrok");
 
@@ -2037,7 +2059,7 @@ mod tests {
     #[test]
     fn a_task_lands_in_the_default_project_when_the_line_does_not_say() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
         let parsed =
             crate::parse::parse_quick_add("Just a task", date(2026, 7, 30), &store.vocabulary());
 
@@ -2048,7 +2070,7 @@ mod tests {
     #[test]
     fn a_default_project_that_has_been_deleted_falls_back_to_the_inbox() {
         let (_dir, mut store) = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
+        let project = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
         store.remove_project(&project, instant(2026, 7, 31));
 
         let parsed =
@@ -2060,9 +2082,9 @@ mod tests {
     #[test]
     fn a_default_section_does_not_follow_a_task_into_another_project() {
         let (_dir, mut store) = store();
-        let work = store.add_project(Project::new("Work", Color::Blue));
-        let section = store.add_section(Section::new(work.clone(), "Admin"));
-        let home = store.add_project(Project::new("Home", Color::Green));
+        let work = store.add_project(Project::new("Work", Color::Blue), instant(2026, 7, 30));
+        let section = store.add_section(Section::new(work.clone(), "Admin"), instant(2026, 7, 30));
+        let home = store.add_project(Project::new("Home", Color::Green), instant(2026, 7, 30));
 
         // Typed from inside Work's Admin section, but naming another project.
         let parsed = crate::parse::parse_quick_add(
@@ -2083,9 +2105,15 @@ mod tests {
     #[test]
     fn the_vocabulary_carries_every_name_the_parser_needs() {
         let (_dir, mut store) = store();
-        let work = store.add_project(Project::new("My Big Project", Color::Blue));
-        store.add_section(Section::new(work.clone(), "In Progress"));
-        store.label_for_name("high energy");
+        let work = store.add_project(
+            Project::new("My Big Project", Color::Blue),
+            instant(2026, 7, 30),
+        );
+        store.add_section(
+            Section::new(work.clone(), "In Progress"),
+            instant(2026, 7, 30),
+        );
+        store.label_for_name("high energy", instant(2026, 7, 30));
 
         let vocabulary = store.vocabulary();
         assert!(vocabulary.projects.contains(&"My Big Project".to_string()));
@@ -2107,11 +2135,10 @@ mod tests {
 
         let id = {
             let (mut store, _) = Store::open_at(&path);
-            let id = store.put_filter(SavedFilter::new(
-                "Urgent this week",
-                "p1 & due before: next week",
-                Color::Red,
-            ));
+            let id = store.put_filter(
+                SavedFilter::new("Urgent this week", "p1 & due before: next week", Color::Red),
+                instant(2026, 7, 30),
+            );
             store.save().unwrap();
             id
         };
@@ -2127,11 +2154,11 @@ mod tests {
     fn saving_a_filter_twice_replaces_it_rather_than_duplicating_it() {
         let (_dir, mut store) = store();
         let mut filter = SavedFilter::new("Work", "#Work", Color::Blue);
-        let id = store.put_filter(filter.clone());
+        let id = store.put_filter(filter.clone(), instant(2026, 7, 30));
 
         filter.name = "Work, urgent".into();
         filter.query = "#Work & p1".into();
-        store.put_filter(filter);
+        store.put_filter(filter, instant(2026, 7, 30));
 
         assert_eq!(store.filters().len(), 1);
         assert_eq!(store.filter(&id).unwrap().name, "Work, urgent");
@@ -2140,7 +2167,10 @@ mod tests {
     #[test]
     fn a_deleted_filter_comes_back_so_it_can_be_undone() {
         let (_dir, mut store) = store();
-        let id = store.put_filter(SavedFilter::new("Gone", "p1", Color::Blue));
+        let id = store.put_filter(
+            SavedFilter::new("Gone", "p1", Color::Blue),
+            instant(2026, 7, 30),
+        );
 
         let removed = store
             .remove_filter(&id, instant(2026, 7, 31))
@@ -2149,7 +2179,7 @@ mod tests {
         assert!(store.filter(&id).is_none());
         assert_eq!(store.remove_filter(&id, instant(2026, 7, 31)), None);
 
-        store.put_filter(removed);
+        store.put_filter(removed, instant(2026, 7, 30));
         assert!(store.filter(&id).is_some());
     }
 
@@ -2157,7 +2187,10 @@ mod tests {
     fn filters_keep_the_order_they_were_added_in() {
         let (_dir, mut store) = store();
         for name in ["One", "Two", "Three"] {
-            store.put_filter(SavedFilter::new(name, "p1", Color::Blue));
+            store.put_filter(
+                SavedFilter::new(name, "p1", Color::Blue),
+                instant(2026, 7, 30),
+            );
         }
         let names: Vec<&str> = store
             .filters_ordered()
@@ -2187,7 +2220,7 @@ mod tests {
     fn each_new_project_gets_a_fresh_colour() {
         let (_dir, mut store) = store();
         let first = store.next_project_color();
-        store.add_project(Project::new("One", first));
+        store.add_project(Project::new("One", first), instant(2026, 7, 30));
         let second = store.next_project_color();
         assert_ne!(first, second);
     }

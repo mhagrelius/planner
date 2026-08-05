@@ -244,7 +244,7 @@ fn widgets() {
 
     runner.case("a task's labels and subtask count reach the row", || {
         let mut store = store();
-        let label = store.label_for_name("errand");
+        let label = store.label_for_name("errand", now());
         let parent = store.add_task(Task::new(ProjectId::inbox(), "Move house", now()));
         store.task_mut(&parent).unwrap().add_label(label);
 
@@ -265,7 +265,7 @@ fn widgets() {
         // The row draws one chip per entry. A name containing the separator
         // the projection used to join on is the case that has to survive.
         for name in ["errand", "home, garden"] {
-            let label = store.label_for_name(name);
+            let label = store.label_for_name(name, now());
             store.task_mut(&task).unwrap().add_label(label);
         }
 
@@ -275,10 +275,10 @@ fn widgets() {
 
     runner.case("the sidebar lists the built-ins then the projects", || {
         let mut store = store();
-        let work = store.add_project(Project::new("Work", Color::Blue));
+        let work = store.add_project(Project::new("Work", Color::Blue), now());
         let mut admin = Project::new("Admin", Color::Teal);
         admin.parent_id = Some(work.clone());
-        store.add_project(admin);
+        store.add_project(admin, now());
 
         let sidebar = Sidebar::new();
         sidebar.refresh(&store, today());
@@ -301,7 +301,7 @@ fn widgets() {
         "every sidebar view's query runs against a real store",
         || {
             let mut store = store();
-            store.add_project(Project::new("Work", Color::Blue));
+            store.add_project(Project::new("Work", Color::Blue), now());
             let id = store.add_task(Task::new(ProjectId::inbox(), "Something", now()));
             store.task_mut(&id).unwrap().due = Some(Due::on(today()));
 
@@ -343,7 +343,7 @@ fn widgets() {
         "the dialog parses what is typed into the real entry",
         || {
             let mut store = store();
-            store.add_project(Project::new("Work", Color::Blue));
+            store.add_project(Project::new("Work", Color::Blue), now());
 
             let dialog = QuickAddDialog::new();
             dialog.prepare(store.vocabulary(), today(), "Inbox");
@@ -405,7 +405,7 @@ fn widgets() {
         "a multi-word project name is recognised from the store",
         || {
             let mut store = store();
-            store.add_project(Project::new("My Big Project", Color::Blue));
+            store.add_project(Project::new("My Big Project", Color::Blue), now());
 
             let dialog = QuickAddDialog::new();
             dialog.prepare(store.vocabulary(), today(), "Inbox");
@@ -428,7 +428,7 @@ fn widgets() {
         "a submitted line becomes the task the chips promised",
         || {
             let mut store = store();
-            let work = store.add_project(Project::new("Work", Color::Blue));
+            let work = store.add_project(Project::new("Work", Color::Blue), now());
 
             let dialog = QuickAddDialog::new();
             dialog.prepare(store.vocabulary(), today(), "Work");
@@ -453,7 +453,7 @@ fn widgets() {
 
     runner.case("the panel shows everything about a task", || {
         let mut store = store();
-        let label = store.label_for_name("errand");
+        let label = store.label_for_name("errand", now());
         let id = store.add_task(Task::new(ProjectId::inbox(), "Move house", now()));
         {
             let task = store.task_mut(&id).unwrap();
@@ -751,7 +751,7 @@ fn widgets() {
 
     runner.case("a project with no sections is one unsectioned lane", || {
         let mut store = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
+        let project = store.add_project(Project::new("Work", Color::Blue), now());
         store.add_task(Task::new(project.clone(), "Something", now()));
 
         let view = ProjectView::new();
@@ -763,9 +763,9 @@ fn widgets() {
 
     runner.case("every section gets a lane, empty ones included", || {
         let mut store = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        let doing = store.add_section(Section::new(project.clone(), "Doing"));
-        store.add_section(Section::new(project.clone(), "Done"));
+        let project = store.add_project(Project::new("Work", Color::Blue), now());
+        let doing = store.add_section(Section::new(project.clone(), "Doing"), now());
+        store.add_section(Section::new(project.clone(), "Done"), now());
 
         let view = ProjectView::new();
         view.show_project(&project, ViewStyle::Board, &store, today());
@@ -779,8 +779,8 @@ fn widgets() {
 
     runner.case("tasks land in the lane for their section", || {
         let mut store = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        let doing = store.add_section(Section::new(project.clone(), "Doing"));
+        let project = store.add_project(Project::new("Work", Color::Blue), now());
+        let doing = store.add_section(Section::new(project.clone(), "Doing"), now());
 
         store.add_task(Task::new(project.clone(), "Loose", now()));
         let sorted = store.add_task(Task::new(project.clone(), "In progress", now()));
@@ -803,8 +803,8 @@ fn widgets() {
         "each lane knows which list it is, so a drop has a home",
         || {
             let mut store = store();
-            let project = store.add_project(Project::new("Work", Color::Blue));
-            let doing = store.add_section(Section::new(project.clone(), "Doing"));
+            let project = store.add_project(Project::new("Work", Color::Blue), now());
+            let doing = store.add_section(Section::new(project.clone(), "Doing"), now());
 
             let view = ProjectView::new();
             view.show_project(&project, ViewStyle::List, &store, today());
@@ -833,8 +833,8 @@ fn widgets() {
 
     runner.case("switching to the board keeps the same lanes", || {
         let mut store = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        store.add_section(Section::new(project.clone(), "Doing"));
+        let project = store.add_project(Project::new("Work", Color::Blue), now());
+        store.add_section(Section::new(project.clone(), "Doing"), now());
 
         let view = ProjectView::new();
         view.show_project(&project, ViewStyle::List, &store, today());
@@ -854,14 +854,14 @@ fn widgets() {
         "adding a section adds a lane without losing the others",
         || {
             let mut store = store();
-            let project = store.add_project(Project::new("Work", Color::Blue));
+            let project = store.add_project(Project::new("Work", Color::Blue), now());
             store.add_task(Task::new(project.clone(), "Loose", now()));
 
             let view = ProjectView::new();
             view.show_project(&project, ViewStyle::List, &store, today());
             assert_eq!(view.lane_count(), 1);
 
-            store.add_section(Section::new(project.clone(), "Doing"));
+            store.add_section(Section::new(project.clone(), "Doing"), now());
             view.show_project(&project, ViewStyle::List, &store, today());
 
             assert_eq!(view.lane_count(), 2);
@@ -873,8 +873,8 @@ fn widgets() {
         "a section header offers rename and delete, and the unsectioned lane does not",
         || {
             let mut store = store();
-            let project = store.add_project(Project::new("Work", Color::Blue));
-            let doing = store.add_section(Section::new(project.clone(), "Doing"));
+            let project = store.add_project(Project::new("Work", Color::Blue), now());
+            let doing = store.add_section(Section::new(project.clone(), "Doing"), now());
 
             let view = ProjectView::new();
             view.show_project(&project, ViewStyle::List, &store, today());
@@ -896,8 +896,8 @@ fn widgets() {
 
     runner.case("removing a section leaves its tasks in the project", || {
         let mut store = store();
-        let project = store.add_project(Project::new("Work", Color::Blue));
-        let doing = store.add_section(Section::new(project.clone(), "Doing"));
+        let project = store.add_project(Project::new("Work", Color::Blue), now());
+        let doing = store.add_section(Section::new(project.clone(), "Doing"), now());
         let id = store.add_task(Task::new(project.clone(), "In progress", now()));
         store.task_mut(&id).unwrap().section_id = Some(doing.clone());
 
@@ -957,7 +957,7 @@ fn widgets() {
         "every lane joins selection mode, including new ones",
         || {
             let mut store = store();
-            let project = store.add_project(Project::new("Work", Color::Blue));
+            let project = store.add_project(Project::new("Work", Color::Blue), now());
             store.add_task(Task::new(project.clone(), "Loose", now()));
 
             let view = ProjectView::new();
@@ -968,7 +968,7 @@ fn widgets() {
 
             // A section added while selecting must not be the one column you
             // cannot select anything in.
-            let doing = store.add_section(Section::new(project.clone(), "Doing"));
+            let doing = store.add_section(Section::new(project.clone(), "Doing"), now());
             view.show_project(&project, ViewStyle::List, &store, today());
 
             assert!(view
@@ -979,7 +979,7 @@ fn widgets() {
 
     runner.case("quick find offers what the store holds", || {
         let mut store = store();
-        store.add_project(Project::new("Plumbing", Color::Blue));
+        store.add_project(Project::new("Plumbing", Color::Blue), now());
         store.add_task(Task::new(ProjectId::inbox(), "Call the plumber", now()));
 
         let dialog = QuickFindDialog::new();
@@ -1010,7 +1010,7 @@ fn widgets() {
         let id = store.add_task(Task::new(ProjectId::inbox(), "Urgent thing", now()));
         store.task_mut(&id).unwrap().priority = Priority::P1;
         store.add_task(Task::new(ProjectId::inbox(), "Ordinary thing", now()));
-        store.put_filter(SavedFilter::new("Urgent", "p1", Color::Red));
+        store.put_filter(SavedFilter::new("Urgent", "p1", Color::Red), now());
 
         let sidebar = Sidebar::new();
         sidebar.refresh(&store, today());
@@ -1032,7 +1032,7 @@ fn widgets() {
             // sidebar entry that silently claims every task is urgent.
             let mut store = store();
             store.add_task(Task::new(ProjectId::inbox(), "A task", now()));
-            store.put_filter(SavedFilter::new("Broken", "p1 & (", Color::Red));
+            store.put_filter(SavedFilter::new("Broken", "p1 & (", Color::Red), now());
 
             let filters = planner::ui::sidebar::filter_views(&store);
             assert_eq!(filters.len(), 1);
@@ -1047,7 +1047,7 @@ fn widgets() {
         "selecting a sidebar entry by id moves the selection",
         || {
             let mut store = store();
-            let project = store.add_project(Project::new("Work", Color::Blue));
+            let project = store.add_project(Project::new("Work", Color::Blue), now());
 
             let sidebar = Sidebar::new();
             sidebar.refresh(&store, today());
@@ -1075,7 +1075,7 @@ fn widgets() {
                 "a fresh store has only the Inbox"
             );
 
-            let id = store.add_project(Project::new("Work", Color::Blue));
+            let id = store.add_project(Project::new("Work", Color::Blue), now());
             sidebar.refresh(&store, today());
 
             let projects = planner::ui::sidebar::project_views(&store);
@@ -1094,8 +1094,8 @@ fn widgets() {
         // A missing icon name is not an error at runtime — GTK draws a
         // broken-image glyph and carries on — so nothing else would catch it.
         let mut store = store();
-        store.add_project(Project::new("Work", Color::Blue));
-        store.put_filter(SavedFilter::new("Urgent", "p1", Color::Red));
+        store.add_project(Project::new("Work", Color::Blue), now());
+        store.put_filter(SavedFilter::new("Urgent", "p1", Color::Red), now());
 
         let theme = gtk::IconTheme::for_display(&gtk::gdk::Display::default().expect("a display"));
         let mut views = builtin_views();
@@ -1129,7 +1129,7 @@ fn widgets() {
             let seeded = dir.path().join("planner").join("planner.json");
             std::fs::create_dir_all(seeded.parent().expect("a parent")).expect("the data dir");
             let (mut store, _) = Store::open_at(&seeded);
-            store.add_project(Project::new("Work", Color::Blue));
+            store.add_project(Project::new("Work", Color::Blue), now());
             store.save().expect("seeding the store");
 
             // Its own ID: the real one would make this process a remote for a

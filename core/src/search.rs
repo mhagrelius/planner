@@ -252,8 +252,8 @@ mod tests {
     #[test]
     fn tasks_projects_and_labels_are_all_searched() {
         let mut store = store();
-        store.add_project(Project::new("Plumbing", Color::Blue));
-        store.label_for_name("plumber");
+        store.add_project(Project::new("Plumbing", Color::Blue), now());
+        store.label_for_name("plumber", now());
         store.add_task(Task::new(ProjectId::inbox(), "Call the plumber", now()));
 
         let found = titles(&store, "plumb");
@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn a_task_says_which_project_it_is_in() {
         let mut store = store();
-        let work = store.add_project(Project::new("Work", Color::Blue));
+        let work = store.add_project(Project::new("Work", Color::Blue), now());
         store.add_task(Task::new(work, "Draft the report", now()));
 
         let hits = search(&store, "draft", 10);
@@ -340,7 +340,7 @@ mod tests {
     fn equal_scores_come_out_in_a_stable_order() {
         let mut store = store();
         for name in ["Beta", "Alpha", "Gamma"] {
-            store.add_project(Project::new(name, Color::Blue));
+            store.add_project(Project::new(name, Color::Blue), now());
         }
         // All three are exact-length prefix matches of "a"... only some are.
         let first = titles(&store, "a");

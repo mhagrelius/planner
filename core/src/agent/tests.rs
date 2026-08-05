@@ -84,8 +84,8 @@ fn error(store: &mut Store, line: &str) -> AgentError {
 #[test]
 fn a_task_is_added_from_the_same_line_the_dialog_would_take() {
     let (_dir, mut store) = store();
-    let work = store.add_project(Project::new("Work", Color::Blue));
-    store.add_section(Section::new(work.clone(), "Admin"));
+    let work = store.add_project(Project::new("Work", Color::Blue), now());
+    store.add_section(Section::new(work.clone(), "Admin"), now());
 
     let response = json(
         &mut store,
@@ -130,7 +130,7 @@ fn a_line_that_is_all_tokens_has_nothing_to_call_the_task() {
 #[test]
 fn a_misspelled_project_does_not_quietly_become_a_new_one() {
     let (_dir, mut store) = store();
-    store.add_project(Project::new("Work", Color::Blue));
+    store.add_project(Project::new("Work", Color::Blue), now());
 
     let response = json(&mut store, "add Something #Wrok");
 
@@ -144,7 +144,7 @@ fn a_misspelled_project_does_not_quietly_become_a_new_one() {
 #[test]
 fn a_subtask_shares_its_parents_project_whatever_the_line_says() {
     let (_dir, mut store) = store();
-    let work = store.add_project(Project::new("Work", Color::Blue));
+    let work = store.add_project(Project::new("Work", Color::Blue), now());
     store.add_task(Task::new(work, "Move house", now()));
 
     let response = json(&mut store, "subtask 'Move house' Pack the books #Inbox p1");
@@ -245,7 +245,7 @@ fn reopening_a_subtask_reopens_the_parents_above_it() {
 #[test]
 fn a_reference_matching_two_open_tasks_is_refused_with_both_ids() {
     let (_dir, mut store) = store();
-    let work = store.add_project(Project::new("Work", Color::Blue));
+    let work = store.add_project(Project::new("Work", Color::Blue), now());
     store.add_task(Task::new(ProjectId::inbox(), "Email Sam", now()));
     store.add_task(Task::new(work, "Email Sam again", now()));
 
@@ -336,7 +336,7 @@ fn naming_a_project_that_does_not_exist_says_so_rather_than_creating_it() {
 #[test]
 fn a_query_is_the_same_language_the_app_filters_with() {
     let (_dir, mut store) = store();
-    store.add_project(Project::new("Work", Color::Blue));
+    store.add_project(Project::new("Work", Color::Blue), now());
     run(&mut store, "add Urgent thing #Work p1 today").unwrap();
     run(&mut store, "add Lesser thing #Work p3 today").unwrap();
     run(&mut store, "add Home thing today").unwrap();
@@ -409,8 +409,8 @@ fn a_query_that_will_not_parse_points_at_the_syntax() {
 #[test]
 fn an_overview_is_enough_to_work_out_what_to_ask_next() {
     let (_dir, mut store) = store();
-    let work = store.add_project(Project::new("Work", Color::Blue));
-    store.add_section(Section::new(work.clone(), "Admin"));
+    let work = store.add_project(Project::new("Work", Color::Blue), now());
+    store.add_section(Section::new(work.clone(), "Admin"), now());
     run(&mut store, "add Overdue thing #Work yesterday").unwrap();
     run(&mut store, "add Due today #Work today @email").unwrap();
     run(&mut store, "add Inbox thing").unwrap();
@@ -458,7 +458,7 @@ fn show_carries_the_things_a_list_leaves_out() {
 #[test]
 fn search_finds_projects_and_labels_as_well_as_tasks() {
     let (_dir, mut store) = store();
-    store.add_project(Project::new("Leasehold", Color::Blue));
+    store.add_project(Project::new("Leasehold", Color::Blue), now());
     run(&mut store, "add Email Sam about the lease").unwrap();
 
     let response = json(&mut store, "search lease");
@@ -537,7 +537,7 @@ fn a_field_set_to_what_it_already_was_reports_no_change() {
 #[test]
 fn several_fields_are_set_in_one_call() {
     let (_dir, mut store) = store();
-    store.add_project(Project::new("Work", Color::Blue));
+    store.add_project(Project::new("Work", Color::Blue), now());
     run(&mut store, "add Email Sam").unwrap();
 
     let response = json(
@@ -556,7 +556,7 @@ fn several_fields_are_set_in_one_call() {
 #[test]
 fn a_moved_task_takes_its_subtasks_to_the_new_project() {
     let (_dir, mut store) = store();
-    store.add_project(Project::new("Work", Color::Blue));
+    store.add_project(Project::new("Work", Color::Blue), now());
     run(&mut store, "add Move house").unwrap();
     run(&mut store, "subtask 'Move house' Pack the books").unwrap();
 
@@ -569,8 +569,8 @@ fn a_moved_task_takes_its_subtasks_to_the_new_project() {
 #[test]
 fn a_section_is_looked_for_in_the_project_the_task_is_moving_to() {
     let (_dir, mut store) = store();
-    let work = store.add_project(Project::new("Work", Color::Blue));
-    store.add_section(Section::new(work.clone(), "Doing"));
+    let work = store.add_project(Project::new("Work", Color::Blue), now());
+    store.add_section(Section::new(work.clone(), "Doing"), now());
     run(&mut store, "add Email Sam").unwrap();
 
     let response = json(&mut store, "update Email project=Work section=Doing");
@@ -582,8 +582,8 @@ fn a_section_is_looked_for_in_the_project_the_task_is_moving_to() {
 #[test]
 fn a_section_the_project_does_not_have_lists_the_ones_it_does() {
     let (_dir, mut store) = store();
-    let work = store.add_project(Project::new("Work", Color::Blue));
-    store.add_section(Section::new(work.clone(), "Doing"));
+    let work = store.add_project(Project::new("Work", Color::Blue), now());
+    store.add_section(Section::new(work.clone(), "Doing"), now());
     run(&mut store, "add Email Sam #Work").unwrap();
 
     let error = error(&mut store, "update Email section=Blocked");
@@ -625,7 +625,7 @@ fn deleting_a_task_reports_the_subtasks_that_went_with_it() {
 #[test]
 fn a_project_can_be_created_under_another() {
     let (_dir, mut store) = store();
-    store.add_project(Project::new("Home", Color::Blue));
+    store.add_project(Project::new("Home", Color::Blue), now());
 
     let response = json(&mut store, "add-project Loft conversion parent=Home");
 
@@ -636,7 +636,7 @@ fn a_project_can_be_created_under_another() {
 #[test]
 fn deleting_a_project_says_how_much_went_with_it() {
     let (_dir, mut store) = store();
-    store.add_project(Project::new("Work", Color::Blue));
+    store.add_project(Project::new("Work", Color::Blue), now());
     run(&mut store, "add Email Sam #Work").unwrap();
     run(&mut store, "add Ring Pat #Work").unwrap();
 

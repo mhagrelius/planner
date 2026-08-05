@@ -483,7 +483,7 @@ impl PlannerApplication {
             }
             Edit::Label { name, on } => {
                 self.mutate(|store| {
-                    let label = store.label_for_name(name);
+                    let label = store.label_for_name(name, now);
                     if let Some(task) = store.task_mut(id) {
                         if *on {
                             task.add_label(label);
@@ -590,11 +590,12 @@ impl PlannerApplication {
         name: &str,
         parent: Option<&crate::model::ProjectId>,
     ) -> crate::model::ProjectId {
+        let now = chrono::Utc::now();
         let id = self.mutate(|store| {
             let colour = store.next_project_color();
             let mut project = crate::model::Project::new(name, colour);
             project.parent_id = parent.cloned();
-            store.add_project(project)
+            store.add_project(project, now)
         });
         self.refresh();
         id
@@ -602,9 +603,11 @@ impl PlannerApplication {
 
     /// Rename a project.
     pub fn rename_project(&self, id: &crate::model::ProjectId, name: &str) {
+        let now = chrono::Utc::now();
         self.mutate(|store| {
             if let Some(project) = store.project_mut(id) {
                 project.name = name.to_string();
+                project.touch(now);
             }
         });
         self.refresh();
@@ -629,16 +632,18 @@ impl PlannerApplication {
 
     /// Add a section to a project.
     pub fn add_section(&self, project: &crate::model::ProjectId, name: &str) {
+        let now = chrono::Utc::now();
         self.mutate(|store| {
             if store.project(project).is_some() {
-                store.add_section(crate::model::Section::new(project.clone(), name));
+                store.add_section(crate::model::Section::new(project.clone(), name), now);
             }
         });
         self.refresh();
     }
 
     pub fn rename_section(&self, id: &crate::model::SectionId, name: &str) {
-        self.mutate(|store| store.rename_section(id, name));
+        let now = chrono::Utc::now();
+        self.mutate(|store| store.rename_section(id, name, now));
         self.refresh();
     }
 
@@ -662,9 +667,11 @@ impl PlannerApplication {
 
     /// Switch a project between list and board.
     pub fn set_view_style(&self, project: &crate::model::ProjectId, style: ViewStyle) {
+        let now = chrono::Utc::now();
         let changed = self.mutate(|store| match store.project_mut(project) {
             Some(project) if project.view_style != style => {
                 project.view_style = style;
+                project.touch(now);
                 true
             }
             _ => false,
@@ -676,7 +683,8 @@ impl PlannerApplication {
 
     /// Save a filter, new or edited.
     pub fn put_filter(&self, filter: crate::model::SavedFilter) {
-        self.mutate(|store| store.put_filter(filter));
+        let now = chrono::Utc::now();
+        self.mutate(|store| store.put_filter(filter, now));
         self.refresh();
     }
 

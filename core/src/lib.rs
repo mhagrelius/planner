@@ -26,6 +26,7 @@ pub mod recurrence;
 pub mod schedule;
 pub mod search;
 pub mod store;
+pub mod sync;
 pub mod task;
 pub mod tombstone;
 
