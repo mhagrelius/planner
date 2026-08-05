@@ -25,6 +25,43 @@ export GTK_A11Y=none
 export GSETTINGS_BACKEND=memory
 export RUST_BACKTRACE=1
 
+# Every XDG directory the app reads, pointed somewhere disposable.
+#
+# XDG_DATA_HOME is the task list. XDG_CONFIG_HOME is the sync target — and
+# that one was learned the hard way: the widget tests register a real
+# PlannerApplication, whose startup reads the config and begins a pass, so a
+# developer with sync configured had the suite push its fixtures to the real
+# server. Redirecting the store was not enough once there was a second thing
+# to read.
+xdg_home="$(mktemp -d)"
+runtime_dir=""
+# One trap for both throwaway directories. A second `trap ... EXIT` replaces
+# the first rather than adding to it, which is how the headless branch below
+# used to silently leak this one.
+cleanup() {
+    rc=$?
+    [[ -n "$runtime_dir" ]] && fusermount3 -u "$runtime_dir/doc" 2>/dev/null
+    rm -rf "$xdg_home" ${runtime_dir:+"$runtime_dir"}
+    exit $rc
+}
+trap cleanup EXIT
+export XDG_DATA_HOME="$xdg_home/data"
+export XDG_CONFIG_HOME="$xdg_home/config"
+export XDG_STATE_HOME="$xdg_home/state"
+export XDG_CACHE_HOME="$xdg_home/cache"
+mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
+
+# The private bus activates its own xdg-document-portal, which mounts a FUSE fs
+# at $XDG_RUNTIME_DIR/doc. Inheriting the login session's runtime dir means that
+# mount lands on /run/user/$UID/doc, on top of the real portal's; the real one
+# exits 21 and every flatpak launch fails until it is restarted. Hand the
+# session a throwaway runtime dir so its portals stay inside it.
+if $headless; then
+    runtime_dir="$(mktemp -d)"
+    chmod 700 "$runtime_dir"
+    export XDG_RUNTIME_DIR="$runtime_dir"
+fi
+
 run() {
     echo "==> $*"
     if $headless; then

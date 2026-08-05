@@ -1125,6 +1125,12 @@ fn widgets() {
             // opens the default path, and a test must not open the file the
             // developer keeps their own tasks in.
             std::env::set_var("XDG_DATA_HOME", dir.path());
+            // And the config, which `startup` reads to decide whether to
+            // sync. Without this a developer who has sync configured has the
+            // suite push its fixtures to their real server — `test.sh` sets
+            // this too, but a single test run straight from cargo does not go
+            // through it.
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
 
             let seeded = dir.path().join("planner").join("planner.json");
             std::fs::create_dir_all(seeded.parent().expect("a parent")).expect("the data dir");
@@ -1159,6 +1165,12 @@ fn widgets() {
             // `borrow_mut` aborts the process rather than failing a test.
             let dir = tempfile::TempDir::new().expect("a temp dir");
             std::env::set_var("XDG_DATA_HOME", dir.path());
+            // And the config, which `startup` reads to decide whether to
+            // sync. Without this a developer who has sync configured has the
+            // suite push its fixtures to their real server — `test.sh` sets
+            // this too, but a single test run straight from cargo does not go
+            // through it.
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
 
             let app = PlannerApplication::with_application_id("us.hagreli.Planner.AgentTest");
             app.register(gtk::gio::Cancellable::NONE)
