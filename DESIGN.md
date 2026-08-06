@@ -234,6 +234,12 @@ It is, because the app has to run on Windows and a Mac as well as here.
 - **The server is Postgres, not files.** Its whole job is refusing a stale
   write, which is one atomic upsert and a lock-plus-race against a directory.
 
+- **A pass is silent, so there is a dialog to ask.** Nothing on a good pass and
+  a banner only after three bad ones is right for something running on every
+  edit, and it leaves no way to tell a working server from no server at all.
+  Main Menu → Sync names the address, what the two sides last agreed on, and
+  when the last pass ran. Read-only: it reports, it does not sync.
+
 ## An agent interface
 
 `planner agent <verb>` — `model/agent/`, built after the milestones above, for

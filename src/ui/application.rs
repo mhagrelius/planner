@@ -83,6 +83,12 @@ mod imp {
         pub sync_cursor: Cell<Option<chrono::DateTime<chrono::Utc>>>,
         /// A pending push, debounced so a burst of typing is one pass.
         pub sync_soon: RefCell<Option<glib::SourceId>>,
+        /// When the last pass finished without an error.
+        pub sync_last_pass: Cell<Option<chrono::DateTime<chrono::Utc>>>,
+        /// Why the last pass failed, from the first failure rather than the
+        /// third. The banner waits for a run of them; the status dialog is
+        /// where you go to ask, so it answers straight away.
+        pub sync_last_failure: RefCell<Option<String>>,
     }
 
     impl Default for PlannerApplication {
@@ -106,6 +112,8 @@ mod imp {
                 sync_failures: Cell::new(0),
                 sync_cursor: Cell::new(None),
                 sync_soon: RefCell::new(None),
+                sync_last_pass: Cell::new(None),
+                sync_last_failure: RefCell::new(None),
             }
         }
     }
@@ -532,6 +540,8 @@ impl PlannerApplication {
         }
 
         self.imp().sync_failures.set(0);
+        self.imp().sync_last_pass.set(Some(now));
+        self.imp().sync_last_failure.replace(None);
         if self.imp().sync_error.borrow_mut().take().is_some() {
             self.notify_save_state();
         }
@@ -657,6 +667,7 @@ impl PlannerApplication {
     fn report_sync_failure(&self, message: String) {
         let failures = self.imp().sync_failures.get() + 1;
         self.imp().sync_failures.set(failures);
+        self.imp().sync_last_failure.replace(Some(message.clone()));
         if failures < SYNC_FAILURES_BEFORE_SAYING_SO {
             return;
         }
@@ -671,6 +682,90 @@ impl PlannerApplication {
     /// Why sync is unhappy, if it has been for long enough to matter.
     pub fn sync_error(&self) -> Option<String> {
         self.imp().sync_error.borrow().clone()
+    }
+
+    /// Open the sync status dialog.
+    fn show_sync_status(&self) {
+        let Some(window) = self.active_window().and_downcast::<PlannerWindow>() else {
+            return;
+        };
+        let (rows, subtitle) = self.sync_status();
+        window.show_sync_status(&rows, &subtitle);
+    }
+
+    /// What syncing has and has not done, as lines to put on screen.
+    ///
+    /// A pass says nothing while it is going well, which is right for something
+    /// that runs on every edit and wrong for something you cannot check. This
+    /// is the place you check, so it answers the question a quiet app leaves
+    /// open: is this going anywhere, and did it get there.
+    pub fn sync_status(&self) -> (Vec<(String, String)>, String) {
+        let imp = self.imp();
+        let target = imp.sync_target.borrow().clone();
+        let failure = imp.sync_last_failure.borrow().clone();
+
+        let mut rows = vec![(
+            "Server".to_string(),
+            match &target {
+                Some((url, _)) => url.clone(),
+                None => "Not set up — this planner stays on this machine".to_string(),
+            },
+        )];
+
+        let here = live(&self.with_store(crate::model::sync::snapshot_of));
+        rows.push((
+            "Records here".to_string(),
+            match here {
+                1 => "1 record".to_string(),
+                n => format!("{n} records"),
+            },
+        ));
+
+        if target.is_some() {
+            // The number that answers "did it work": how many records this
+            // machine and the server last agreed on. Short of the local count
+            // means there is work left rather than something broken.
+            let agreed = live(&imp.sync_base.borrow());
+            rows.push((
+                "Synced".to_string(),
+                match (agreed, here) {
+                    (0, 0) => "Nothing to sync yet".to_string(),
+                    (0, _) => "Not yet — the first pass has not finished".to_string(),
+                    (agreed, here) if agreed >= here => format!("All {here}"),
+                    (agreed, here) => format!("{agreed} of {here}, the rest on the next pass"),
+                },
+            ));
+
+            rows.push((
+                "Last pass".to_string(),
+                match (&failure, imp.sync_last_pass.get()) {
+                    (Some(error), _) => format!("Failed — {error}"),
+                    (None, Some(when)) => ago(when),
+                    (None, None) => "Not since Planner was opened".to_string(),
+                },
+            ));
+        }
+
+        rows.push((
+            "File".to_string(),
+            self.with_store(|store| store.path().display().to_string()),
+        ));
+
+        let subtitle = match (&target, &failure) {
+            (None, _) => format!(
+                "Syncing is off. Set sync_url and sync_token in {} to share this planner \
+                 between machines.",
+                crate::model::Config::default_path().display()
+            ),
+            (Some(_), Some(_)) => "Nothing here is at risk — the copy on this machine is the \
+                                   one that counts, and the next pass will try again."
+                .to_string(),
+            (Some(_), None) => "A pass runs when an edit settles, and the server holds a \
+                                request open so a change made elsewhere arrives as it happens."
+                .to_string(),
+        };
+
+        (rows, subtitle)
     }
 
     // --- reminders ------------------------------------------------------
@@ -1187,6 +1282,9 @@ impl PlannerApplication {
             gio::ActionEntry::builder("about")
                 .activate(|app: &Self, _, _| app.show_about())
                 .build(),
+            gio::ActionEntry::builder("sync-status")
+                .activate(|app: &Self, _, _| app.show_sync_status())
+                .build(),
         ];
         self.add_action_entries(entries);
 
@@ -1211,5 +1309,33 @@ impl PlannerApplication {
             .license_type(gtk::License::Gpl30)
             .build();
         dialog.present(self.active_window().as_ref());
+    }
+}
+
+/// How many records a snapshot holds that have not been deleted.
+///
+/// Tombstones are in there so a pass can tell "deleted" from "never seen", but
+/// a count of records that includes them answers no question a user is asking.
+fn live(snapshot: &crate::model::sync::Snapshot) -> usize {
+    snapshot
+        .values()
+        .filter(|version| matches!(version, crate::model::sync::Version::Live(_)))
+        .count()
+}
+
+/// How long ago something happened, in the roundest terms that are still true.
+///
+/// Seconds would be a number that changes while you read it, and a pass that
+/// ran twenty seconds ago and one that ran a minute ago mean the same thing.
+fn ago(when: chrono::DateTime<chrono::Utc>) -> String {
+    let seconds = (chrono::Utc::now() - when).num_seconds();
+    match seconds {
+        // The clock went backwards, or the pass is younger than the phrasing.
+        i64::MIN..=90 => "just now".to_string(),
+        91..=5400 => format!("{} minutes ago", (seconds + 30) / 60),
+        _ => match (seconds + 1800) / 3600 {
+            1 => "an hour ago".to_string(),
+            hours => format!("{hours} hours ago"),
+        },
     }
 }

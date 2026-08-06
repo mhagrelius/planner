@@ -1163,6 +1163,79 @@ fn widgets() {
             .expect("unlock the directory");
     });
 
+    runner.case(
+        "the sync dialog says whether records are going anywhere",
+        || {
+            // A pass that works says nothing, so this dialog is the only answer to
+            // "is it using the server?" — the question that prompted it existing.
+            let dir = tempfile::TempDir::new().expect("a temp dir");
+            std::env::set_var("XDG_DATA_HOME", dir.path());
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+            let app =
+                PlannerApplication::with_application_id("us.hagreli.Planner.SyncStatusOffTest");
+            app.register(gtk::gio::Cancellable::NONE)
+                .expect("registering emits startup");
+
+            // The menu item points at this name. A typo would leave the item
+            // greyed out and say nothing about why.
+            assert!(
+                app.lookup_action("sync-status").is_some(),
+                "the Sync… menu item has no action behind it"
+            );
+
+            let (rows, subtitle) = app.sync_status();
+            let find = |title: &str| {
+                rows.iter()
+                    .find(|(name, _)| name == title)
+                    .map(|(_, value)| value.clone())
+            };
+            assert!(
+                find("Server")
+                    .expect("a server row")
+                    .starts_with("Not set up"),
+                "with no config the dialog has to say sync is off, not stay silent"
+            );
+            assert!(
+                find("Synced").is_none() && find("Last pass").is_none(),
+                "there is no pass to report when there is nowhere to sync to"
+            );
+            assert!(
+                subtitle.contains("config.json"),
+                "an off state is only useful if it says where to turn it on: {subtitle}"
+            );
+
+            // And with a server that is not answering: the address is still worth
+            // showing, because "pointing at the wrong host" and "the host is down"
+            // look identical from the outside.
+            std::fs::create_dir_all(dir.path().join("planner")).expect("the config dir");
+            std::fs::write(
+                dir.path().join("planner").join("config.json"),
+                r#"{"sync_url":"http://127.0.0.1:1","sync_token":"nobody-is-listening"}"#,
+            )
+            .expect("a config");
+
+            let app = PlannerApplication::with_application_id("us.hagreli.Planner.SyncStatusTest");
+            app.register(gtk::gio::Cancellable::NONE)
+                .expect("registering emits startup, which starts syncing");
+            settle_for(600);
+
+            let (rows, _) = app.sync_status();
+            let find = |title: &str| {
+                rows.iter()
+                    .find(|(name, _)| name == title)
+                    .map(|(_, value)| value.clone())
+            };
+            assert_eq!(find("Server").as_deref(), Some("http://127.0.0.1:1"));
+            let last = find("Last pass").expect("a last pass row");
+            assert!(
+                last.starts_with("Failed"),
+                "the first failure belongs here even though the banner waits for \
+             three: this is where you come to ask. {last}"
+            );
+        },
+    );
+
     runner.case("every icon a view asks for exists in the theme", || {
         // A missing icon name is not an error at runtime — GTK draws a
         // broken-image glyph and carries on — so nothing else would catch it.

@@ -142,6 +142,9 @@ impl PlannerWindow {
         create.append(Some("New Project…"), Some("win.new-project"));
         create.append(Some("New Filter…"), Some("win.new-filter"));
         menu.append_section(None, &create);
+        let document_items = gtk::gio::Menu::new();
+        document_items.append(Some("Sync…"), Some("app.sync-status"));
+        menu.append_section(None, &document_items);
         let app_items = gtk::gio::Menu::new();
         app_items.append(Some("Quick Find"), Some("win.find"));
         app_items.append(Some("About Planner"), Some("app.about"));
@@ -1619,6 +1622,51 @@ impl PlannerWindow {
         } else {
             app.uncomplete_task(&id);
         }
+    }
+
+    /// Show what syncing has and has not done.
+    ///
+    /// Read-only, and a dialog rather than anything on the window: it answers a
+    /// question you ask occasionally — "is this actually going anywhere?" —
+    /// rather than one you watch. A pass is silent while it goes well, which is
+    /// right for something that runs on every edit and leaves nowhere to check,
+    /// so this is the place you check.
+    pub fn show_sync_status(&self, rows: &[(String, String)], subtitle: &str) {
+        let dialog = adw::Dialog::builder()
+            .title("Sync")
+            .content_width(460)
+            .child(&Self::sync_status_content(rows, subtitle))
+            .build();
+        dialog.present(Some(self));
+    }
+
+    /// The dialog's contents, on their own, so `examples/preview.rs` can render
+    /// them — a dialog needs presenting and an offscreen render has no window
+    /// to present onto.
+    pub fn sync_status_content(rows: &[(String, String)], subtitle: &str) -> adw::ToolbarView {
+        let group = adw::PreferencesGroup::new();
+        group.set_description(Some(subtitle));
+        for (title, value) in rows {
+            let row = adw::ActionRow::builder()
+                .title(title)
+                .subtitle(value)
+                // Nothing here is a control. Making the rows unfocusable stops
+                // the dialog opening with a highlight on a line of text.
+                .activatable(false)
+                .focusable(false)
+                .build();
+            // Paths and URLs are long and the interesting end is the right one.
+            row.set_subtitle_lines(0);
+            group.add(&row);
+        }
+
+        let page = adw::PreferencesPage::new();
+        page.add(&group);
+
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&adw::HeaderBar::new());
+        toolbar.set_content(Some(&page));
+        toolbar
     }
 
     /// Show a message that does not need a response.

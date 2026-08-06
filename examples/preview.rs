@@ -26,6 +26,7 @@ use planner::ui::project_view::ProjectView;
 use planner::ui::quick_add::QuickAddDialog;
 use planner::ui::sidebar::{builtin_views, Sidebar};
 use planner::ui::task_list::TaskList;
+use planner::ui::window::PlannerWindow;
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -142,6 +143,24 @@ fn main() {
         460,
         &format!("{out}/project-board-{}.png", scheme(dark)),
     );
+
+    // The sync dialog, with a server that is working.
+    let rows: Vec<(String, String)> = [
+        ("Server", "http://nas:8083"),
+        ("Records here", "24 records"),
+        ("Synced", "All 24"),
+        ("Last pass", "2 minutes ago"),
+        ("File", "/home/you/.local/share/planner/planner.json"),
+    ]
+    .into_iter()
+    .map(|(title, value)| (title.to_string(), value.to_string()))
+    .collect();
+    let sync = PlannerWindow::sync_status_content(
+        &rows,
+        "A pass runs when an edit settles, and the server holds a request open so a change \
+         made elsewhere arrives as it happens.",
+    );
+    render(&sync, 460, 400, &format!("{out}/sync-{}.png", scheme(dark)));
 
     println!("wrote {out}/*-{}.png", scheme(dark));
 }
