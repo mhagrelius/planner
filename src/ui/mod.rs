@@ -10,6 +10,8 @@
 pub mod application;
 pub mod date_picker;
 pub mod detail_panel;
+pub mod duplicate_check;
+pub mod embedding;
 pub mod project_view;
 pub mod quick_add;
 pub mod quick_find;

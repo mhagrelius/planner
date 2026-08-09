@@ -40,6 +40,29 @@ chrono = { version = "0.4", default-features = false, features = [
     "serde",
 ] }
 
+# TLS, which is the whole reason this is here. `ui::sync` speaks HTTP over a
+# bare `std::net::TcpStream` and refuses `https://` on purpose — it talks to a
+# server on the LAN, where a hand-rolled request is less code than a dependency.
+# api.anthropic.com is TLS-only, and TLS is not a thing to hand-roll.
+#
+# libsoup would have been the platform answer and is the one that was tried
+# first: it is already in the GNOME runtime and integrates with the GLib main
+# loop. The `soup3` bindings rule it out either way round — 0.9 needs rustc
+# 1.92, well past this crate's 1.80, and 0.8 pulls glib 0.21 against the 0.22
+# that gtk4 0.11 brings, which is two GObject type systems in one process.
+#
+# ureq is blocking, which suits the worker-thread-plus-poll shape sync already
+# uses, and brings rustls rather than an async runtime: 43 crates, no tokio.
+# Sentence embeddings for duplicate retrieval. In this crate and not
+# planner-core on purpose: core is what planner-server links, and a container
+# serving JSON has no business carrying a neural network.
+candle-core = "0.11"
+candle-nn = "0.11"
+candle-transformers = "0.11"
+tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
+
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+
 [dev-dependencies]
 tempfile = "3"
 adw = { package = "libadwaita", version = "0.9", features = ["v1_9"] }

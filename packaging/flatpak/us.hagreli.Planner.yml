@@ -25,11 +25,23 @@ finish-args:
   # Reminders are desktop notifications, which need the portal.
   - --talk-name=org.freedesktop.Notifications
 
+  # This line used to be absent, with a comment saying nothing here talks to
+  # the network. That stopped being true twice over, and this is where both
+  # become visible:
+  #
+  #   - Sync. `ui::sync` posts to a `planner-server` over HTTP. The comment
+  #     predates it, so the Flatpak build has silently been the one build that
+  #     could not sync.
+  #   - The quick-add duplicate check, when an `anthropic_api_key` is written
+  #     into the config. Without a key nothing here opens a socket, so this
+  #     permission grants a capability the default configuration never uses.
+  #
+  # The reach is wider than either needs — Flatpak has no per-host network
+  # permission, so this is all-or-nothing.
+  - --share=network
+
   # Deliberately absent:
   #   --filesystem=*    tasks live in the app's own XDG data dir
-  #   --share=network   nothing here talks to the network. There is no sync,
-  #                     and if one is ever added this line is where the
-  #                     decision becomes visible.
 
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
