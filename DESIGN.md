@@ -240,6 +240,87 @@ It is, because the app has to run on Windows and a Mac as well as here.
   Main Menu → Sync names the address, what the two sides last agreed on, and
   when the last pass ran. Read-only: it reports, it does not sync.
 
+### The duplicate check, which this document did not mention at all
+
+Quick add is easy to use twice. Typing the same errand a second time is the
+most common way this list gets untidy, and nothing in the app noticed.
+
+- **It reports inline; it does not gate.** `window.rs` chose an undo toast over
+  a confirmation for adding, on the grounds that asking first for something
+  this frequent would be intolerable, and that reasoning is still right. What
+  resembles the task appears *under the entry while it is being typed*, beside
+  the chips that already report what was understood. Add stays one keystroke
+  away.
+
+  The exception is a near-certain match, which is the one case where the toast
+  is no help: undo removes the task just added, not the duplicate already
+  there. That gets an `AdwAlertDialog` with Cancel, Open Existing, Add Anyway.
+
+- **Two halves, and the local one is what makes the other affordable.**
+  `model/similar.rs` compares normalised word sets — pure, microseconds, runs
+  on every keystroke. `model/duplicate.rs` asks Claude, debounced at 600ms,
+  and only about the handful `similar` already found. A prompt cannot hold
+  every task and re-sending the list per keystroke would be absurd even if it
+  fit.
+
+- **Two floors, because a prefilter tuned to the display's precision is one
+  that cannot be told it was wrong.** Above 0.5 is worth showing on words
+  alone; above 0.2 is worth *asking* about. "Ring the plumber" against "Call
+  the plumber" scores 0.42 — invisible on the first, forwarded by the second,
+  and the entire reason the model earns its round trip.
+
+- **A third retrieval path, for pairs sharing no words at all.**
+  `ui::embedding` ranks the whole list with all-MiniLM-L6-v2 and contributes
+  its top five. This is what finds "Sort out the leaking tap" when you type
+  "Repair the dripping tap" — a pair the word comparison scores at 0.27 and
+  would never show.
+
+  **Rank, never threshold**, and this was measured rather than assumed. Cosine
+  *ordering* within one query is reliable: over a twenty-task list the true
+  duplicate came first for every phrasing tried, by a clear margin. Cosine
+  *magnitude* is very nearly meaningless: "Pay invoice 42" against "Pay invoice
+  43" scores 0.96 and is not a duplicate, "Call the plumber" against "Ring the
+  plumber" scores 0.88 and is, and two unrelated errands sit at 0.75 because
+  both are short imperative sentences. A margin test fails too — the smallest
+  true-duplicate gap measured 0.022 against 0.020 for a query with no duplicate
+  at all. So embeddings retrieve and never decide.
+
+  The consequence, stated plainly: **the model does nothing without an API
+  key.** Its hits carry no score that would justify showing them, so they
+  appear only once judged. It is a retrieval aid for the adjudicator, not a
+  feature of its own.
+
+- **The embedding model is a file the user installs**, not something bundled —
+  `packaging/fetch-embedding-model.sh`, into `$XDG_DATA_HOME/planner/model`.
+  87MB into every `.deb` and Flatpak is not a reasonable default for an app
+  whose own document is tens of kilobytes. Half precision would halve it and is
+  not available: f16 attention overflows to NaN on CPU, and runs slower besides,
+  CPU having no native f16 arithmetic. Absent, everything falls back to words.
+
+  It sits in the `planner` crate rather than `planner-core`, because
+  `planner-server` links core and a container serving JSON has no business
+  carrying a neural network. Vectors are warmed one task per timer tick — a
+  title costs ~35ms, and doing a list in one go would freeze the window for
+  seconds — and held in memory only, never on disk.
+
+- **Off until a key is written into the config**, next to `sync_token`, and it
+  degrades rather than failing: no key, no network, a bad key or a decline all
+  leave the local comparison doing its half. None of them raises anything —
+  someone adding a task is not in a position to fix an API key.
+
+- **One new dependency, `ureq`, for TLS.** `ui::sync` speaks HTTP over a bare
+  `TcpStream` and refuses `https://` on purpose, which is right for a server on
+  the LAN and useless against `api.anthropic.com`. libsoup was the platform
+  answer and was tried first; its bindings rule it out either way round — 0.9
+  needs rustc 1.92 against an MSRV of 1.80, and 0.8 pulls glib 0.21 against the
+  0.22 gtk4 brings.
+
+- **The Flatpak now has `--share=network`**, reversing a line that was
+  deliberately absent. Two things had already made its comment false: sync
+  shipped, so the Flatpak has silently been the one build that could not sync.
+  Flatpak has no per-host network permission, so the grant is wider than either
+  use needs.
+
 ## An agent interface
 
 `planner agent <verb>` — `model/agent/`, built after the milestones above, for
