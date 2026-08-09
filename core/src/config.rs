@@ -20,6 +20,17 @@ pub struct Config {
     /// The bearer token that server was started with.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_token: Option<String>,
+
+    /// An Anthropic API key, enabling the semantic half of the duplicate
+    /// check. Absent means quick-add still warns about near-identical titles,
+    /// using the local word comparison only.
+    ///
+    /// In a file rather than the keyring for the same reason `sync_token` is:
+    /// there is one place a person configures this app, and a second mechanism
+    /// for the second secret would be a second thing to explain and to break.
+    /// The file is the app's own, under `$XDG_CONFIG_HOME`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anthropic_api_key: Option<String>,
 }
 
 impl Config {
@@ -57,6 +68,14 @@ impl Config {
             _ => None,
         }
     }
+
+    /// The API key, if one was written. An empty string is not a setting, for
+    /// the same reason a half-filled sync target is not one.
+    pub fn anthropic_key(&self) -> Option<&str> {
+        self.anthropic_api_key
+            .as_deref()
+            .filter(|key| !key.trim().is_empty())
+    }
 }
 
 #[cfg(test)]
@@ -85,12 +104,14 @@ mod tests {
         let url_only = Config {
             sync_url: Some("http://nas:8083".into()),
             sync_token: None,
+            ..Default::default()
         };
         assert_eq!(url_only.sync_target(), None);
 
         let token_only = Config {
             sync_url: None,
             sync_token: Some("t".into()),
+            ..Default::default()
         };
         assert_eq!(token_only.sync_target(), None);
     }
@@ -100,6 +121,7 @@ mod tests {
         let config = Config {
             sync_url: Some("http://nas:8083".into()),
             sync_token: Some("t".into()),
+            ..Default::default()
         };
         assert_eq!(config.sync_target(), Some(("http://nas:8083", "t")));
     }
@@ -110,7 +132,40 @@ mod tests {
         let config = Config {
             sync_url: Some(String::new()),
             sync_token: Some("t".into()),
+            ..Default::default()
         };
         assert_eq!(config.sync_target(), None);
+    }
+
+    #[test]
+    fn no_key_means_the_local_duplicate_check_only() {
+        assert_eq!(Config::default().anthropic_key(), None);
+        let blank = Config {
+            anthropic_api_key: Some("   ".into()),
+            ..Default::default()
+        };
+        assert_eq!(blank.anthropic_key(), None);
+    }
+
+    #[test]
+    fn a_key_that_is_there_is_returned() {
+        let config = Config {
+            anthropic_api_key: Some("sk-ant-xyz".into()),
+            ..Default::default()
+        };
+        assert_eq!(config.anthropic_key(), Some("sk-ant-xyz"));
+    }
+
+    #[test]
+    fn a_config_written_for_sync_alone_still_loads() {
+        // The field arrived after people already had config files. An older
+        // one must not become unreadable, which would silently turn sync off.
+        let dir = tempfile::TempDir::new().expect("a temp dir");
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"sync_url":"http://nas:8083","sync_token":"t"}"#).expect("write");
+
+        let config = Config::load_from(&path);
+        assert_eq!(config.sync_target(), Some(("http://nas:8083", "t")));
+        assert_eq!(config.anthropic_key(), None);
     }
 }
