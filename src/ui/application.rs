@@ -65,6 +65,16 @@ mod imp {
         pub schedule: RefCell<Schedule>,
         pub reminder_tick: RefCell<Option<glib::SourceId>>,
 
+        // --- semantic duplicate search ----------------------------------
+        /// The embedding model, once loaded. `Rc` because the warm-up timer
+        /// and every quick-add dialog share the one cache.
+        pub embedder: RefCell<Option<std::rc::Rc<crate::ui::embedding::Embedder>>>,
+        /// Loading is attempted once. Without this a missing model would be
+        /// re-looked-for on every keystroke.
+        pub embedder_tried: Cell<bool>,
+        /// The tick embedding existing tasks a few at a time.
+        pub warmup: RefCell<Option<glib::SourceId>>,
+
         // --- sync -------------------------------------------------------
         /// Where to sync to, if the config named somewhere.
         pub sync_target: RefCell<Option<(String, String)>>,
@@ -104,6 +114,9 @@ mod imp {
                 tick: RefCell::new(None),
                 schedule: RefCell::new(Schedule::new()),
                 reminder_tick: RefCell::new(None),
+                embedder: RefCell::new(None),
+                embedder_tried: Cell::new(false),
+                warmup: RefCell::new(None),
                 sync_target: RefCell::new(None),
                 sync_base: RefCell::new(Default::default()),
                 sync_tick: RefCell::new(None),
@@ -385,6 +398,88 @@ impl PlannerApplication {
             ),
         );
         self.imp().tick.replace(Some(id));
+    }
+
+    /// The sentence-embedding model, loaded on first use.
+    ///
+    /// `None` forever if there is no model installed, which is the ordinary
+    /// state — loading is attempted once and the outcome remembered, so a
+    /// missing file does not cost a directory walk per keystroke.
+    pub fn embedder(&self) -> Option<std::rc::Rc<crate::ui::embedding::Embedder>> {
+        let imp = self.imp();
+        if let Some(embedder) = imp.embedder.borrow().as_ref() {
+            return Some(embedder.clone());
+        }
+        if imp.embedder_tried.get() {
+            return None;
+        }
+        imp.embedder_tried.set(true);
+
+        match crate::ui::embedding::Embedder::load() {
+            Ok(embedder) => {
+                let embedder = std::rc::Rc::new(embedder);
+                imp.embedder.replace(Some(embedder.clone()));
+                self.start_embedding_warmup();
+                Some(embedder)
+            }
+            Err(why) => {
+                // Not a banner. Someone adding a task cannot act on this, and
+                // the word comparison covers for it.
+                eprintln!("planner: semantic duplicate search is off ({why})");
+                None
+            }
+        }
+    }
+
+    /// Embed the existing tasks a few at a time, off the critical path.
+    ///
+    /// A title costs about 35ms and the whole list must not be done at once —
+    /// that is seconds of frozen window. One per tick keeps the main loop
+    /// responsive, and the timer stops itself when everything is covered.
+    fn start_embedding_warmup(&self) {
+        if self.imp().warmup.borrow().is_some() {
+            return;
+        }
+        let id = glib::timeout_add_local(
+            Duration::from_millis(10),
+            glib::clone!(
+                #[weak(rename_to = app)]
+                self,
+                #[upgrade_or]
+                glib::ControlFlow::Break,
+                move || {
+                    let Some(embedder) = app.imp().embedder.borrow().clone() else {
+                        return glib::ControlFlow::Break;
+                    };
+                    if app.with_store(|store| embedder.warm_one(store)) {
+                        glib::ControlFlow::Continue
+                    } else {
+                        app.imp().warmup.replace(None);
+                        glib::ControlFlow::Break
+                    }
+                }
+            ),
+        );
+        self.imp().warmup.replace(Some(id));
+    }
+
+    /// Bring the vectors back up to date after tasks arrive or change.
+    pub fn rewarm_embeddings(&self) {
+        if self.imp().embedder.borrow().is_some() {
+            self.start_embedding_warmup();
+        }
+    }
+
+    /// The Anthropic API key, if the config names one.
+    ///
+    /// Read on each quick-add rather than cached at startup, so writing the key
+    /// into the config file takes effect on the next dialog rather than the
+    /// next launch. The file is a few hundred bytes and this happens once per
+    /// dialog, which is not a rate worth caching against.
+    pub fn anthropic_key(&self) -> Option<String> {
+        crate::model::Config::load()
+            .anthropic_key()
+            .map(str::to_string)
     }
 
     // --- sync -----------------------------------------------------------
@@ -1269,6 +1364,10 @@ impl PlannerApplication {
         if let Some(window) = self.active_window().and_downcast::<PlannerWindow>() {
             window.refresh();
         }
+        // A task added, edited or pulled in by a sync needs a vector before it
+        // can be found by meaning. No-op unless a model is already loaded, so
+        // this costs nothing for the installs that never turn it on.
+        self.rewarm_embeddings();
     }
 
     fn install_actions(&self) {

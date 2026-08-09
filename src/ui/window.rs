@@ -1457,6 +1457,56 @@ impl PlannerWindow {
 
         let dialog = QuickAddDialog::new();
         dialog.prepare(vocabulary, crate::ui::today(), &name);
+
+        // The dialog asks what resembles a title; the store lives here. A
+        // closure keeps "the dialog never touches the store" true.
+        dialog.set_candidate_source(glib::clone!(
+            #[weak(rename_to = window)]
+            self,
+            #[upgrade_or_default]
+            move |title: &str| {
+                let Some(app) = window.planner_application() else {
+                    return Vec::new();
+                };
+
+                // Words first: free, and the only half that exists without a
+                // model installed. Gathered wide so the language model can
+                // recognise a pair the words alone would not justify showing.
+                let mut found = app.with_store(|store| {
+                    crate::model::similar::candidates(
+                        store,
+                        title,
+                        None,
+                        crate::model::duplicate::MAX_CANDIDATES,
+                        crate::model::similar::RECALL_FLOOR,
+                    )
+                });
+
+                // Then meaning, which is what retrieves a pair sharing no
+                // words at all — "Repair the dripping tap" against "Sort out
+                // the leaking tap". Appended rather than merged by score: a
+                // cosine and a word overlap are not the same quantity and
+                // ordering them against each other would be a fiction.
+                if let Some(embedder) = app.embedder() {
+                    let nearest = app.with_store(|store| embedder.nearest(store, title, None));
+                    for id in nearest {
+                        if found.iter().any(|candidate| candidate.id == id) {
+                            continue;
+                        }
+                        if let Some(candidate) = app.with_store(|store| {
+                            crate::model::similar::candidate_for(store, &id, title)
+                        }) {
+                            found.push(candidate);
+                        }
+                    }
+                }
+
+                found.truncate(crate::model::duplicate::MAX_CANDIDATES);
+                found
+            }
+        ));
+        dialog.set_api_key(app.anthropic_key());
+
         dialog.connect_closure(
             "submitted",
             false,
@@ -1467,6 +1517,17 @@ impl PlannerWindow {
                 default_project,
                 move |_: QuickAddDialog, line: &str| {
                     window.on_quick_add_submitted(line, &default_project);
+                }
+            ),
+        );
+        dialog.connect_closure(
+            "open-existing",
+            false,
+            glib::closure_local!(
+                #[watch(rename_to = window)]
+                self,
+                move |_: QuickAddDialog, id: &str| {
+                    window.open_task(&crate::model::TaskId::from_raw(id));
                 }
             ),
         );

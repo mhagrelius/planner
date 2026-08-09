@@ -425,6 +425,178 @@ fn widgets() {
         assert!(dialog.keeps_adding());
     });
 
+    // --- the duplicate check ------------------------------------------
+
+    /// A dialog wired to a store, as `window.rs` wires the real one.
+    fn dialog_over(store: Store) -> QuickAddDialog {
+        let dialog = QuickAddDialog::new();
+        dialog.prepare(store.vocabulary(), today(), "Inbox");
+        dialog.set_candidate_source(move |title: &str| {
+            planner::model::similar::candidates(
+                &store,
+                title,
+                None,
+                8,
+                planner::model::similar::RECALL_FLOOR,
+            )
+        });
+        dialog
+    }
+
+    runner.case(
+        "typing a near-identical title surfaces the existing one",
+        || {
+            let mut store = store();
+            store.add_task(Task::new(ProjectId::inbox(), "Buy milk", now()));
+
+            let dialog = dialog_over(store);
+            assert!(dialog.similar().is_empty(), "nothing typed, nothing shown");
+
+            dialog.set_text("buy some milk");
+            let similar = dialog.similar();
+            assert_eq!(similar.len(), 1);
+            assert_eq!(similar[0].title, "Buy milk");
+        },
+    );
+
+    runner.case("an unrelated title surfaces nothing", || {
+        let mut store = store();
+        store.add_task(Task::new(ProjectId::inbox(), "Buy milk", now()));
+
+        let dialog = dialog_over(store);
+        dialog.set_text("Renew the passport");
+        assert!(dialog.similar().is_empty());
+        assert!(!dialog.would_confirm());
+    });
+
+    runner.case(
+        "quick-add tokens are not compared as though they were the title",
+        || {
+            let mut store = store();
+            store.add_task(Task::new(ProjectId::inbox(), "Buy milk", now()));
+
+            // The date, project and priority must not reach the comparison —
+            // it is the title that is or is not a duplicate.
+            let dialog = dialog_over(store);
+            dialog.set_text("buy milk p1 friday @errand");
+            let similar = dialog.similar();
+            assert_eq!(similar.len(), 1, "the tokens did not hide the match");
+            assert!(dialog.would_confirm());
+        },
+    );
+
+    runner.case(
+        "a near-identical title stops to ask even with no model available",
+        || {
+            let mut store = store();
+            store.add_task(Task::new(
+                ProjectId::inbox(),
+                "Email Sam about the lease",
+                now(),
+            ));
+
+            // No API key is set, so this is the local comparison alone. The
+            // feature has to degrade to something rather than nothing.
+            let dialog = dialog_over(store);
+            dialog.set_text("email sam about lease");
+            assert!(dialog.would_confirm());
+        },
+    );
+
+    runner.case("a merely similar title does not stop to ask", || {
+        let mut store = store();
+        store.add_task(Task::new(ProjectId::inbox(), "Buy milk and bread", now()));
+
+        let dialog = dialog_over(store);
+        dialog.set_text("Buy bread");
+        assert_eq!(dialog.similar().len(), 1, "still worth showing");
+        assert!(!dialog.would_confirm(), "but not worth interrupting over");
+    });
+
+    runner.case("the model's verdict overrides the local guess", || {
+        use planner::model::duplicate::{Judgement, Judgements, Verdict};
+
+        let mut store = store();
+        let id = store.add_task(Task::new(ProjectId::inbox(), "Buy milk", now()));
+
+        let dialog = dialog_over(store);
+        dialog.set_text("buy some milk");
+        assert!(dialog.would_confirm(), "the local pass would stop here");
+
+        // A model that looked at the pair and said they are different tasks
+        // must be able to call the interruption off.
+        dialog.apply_judgements(Judgements {
+            duplicates: vec![Judgement {
+                id: id.as_str().to_string(),
+                verdict: Verdict::Different,
+                reason: "different shops".into(),
+            }],
+        });
+        assert!(!dialog.would_confirm());
+    });
+
+    runner.case(
+        "the model can catch a duplicate the local pass cannot",
+        || {
+            use planner::model::duplicate::{Judgement, Judgements, Verdict};
+
+            let mut store = store();
+            let id = store.add_task(Task::new(ProjectId::inbox(), "Call the plumber", now()));
+
+            let dialog = dialog_over(store);
+            // Synonyms are out of reach for word comparison, by construction.
+            dialog.set_text("Ring the plumber");
+            assert!(!dialog.would_confirm());
+
+            dialog.apply_judgements(Judgements {
+                duplicates: vec![Judgement {
+                    id: id.as_str().to_string(),
+                    verdict: Verdict::Same,
+                    reason: "calling and ringing are the same".into(),
+                }],
+            });
+            assert!(dialog.would_confirm());
+        },
+    );
+
+    runner.case("editing the title forgets the previous verdict", || {
+        use planner::model::duplicate::{Judgement, Judgements, Verdict};
+
+        let mut store = store();
+        let id = store.add_task(Task::new(ProjectId::inbox(), "Buy milk", now()));
+
+        let dialog = dialog_over(store);
+        dialog.set_text("buy some milk");
+        dialog.apply_judgements(Judgements {
+            duplicates: vec![Judgement {
+                id: id.as_str().to_string(),
+                verdict: Verdict::Different,
+                reason: "not the same".into(),
+            }],
+        });
+        assert!(!dialog.would_confirm());
+
+        // A verdict about one sentence must not survive into another.
+        dialog.set_text("buy milk");
+        assert!(
+            dialog.would_confirm(),
+            "the stale verdict outlived the words it was about"
+        );
+    });
+
+    runner.case(
+        "the task being added is not compared against itself",
+        || {
+            let mut store = store();
+            store.add_task(Task::new(ProjectId::inbox(), "Buy milk", now()));
+
+            let dialog = dialog_over(store);
+            dialog.set_text("Buy milk");
+            // One match — the existing task — not two.
+            assert_eq!(dialog.similar().len(), 1);
+        },
+    );
+
     runner.case(
         "a submitted line becomes the task the chips promised",
         || {

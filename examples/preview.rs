@@ -99,6 +99,39 @@ fn main() {
         &format!("{out}/quick-add-{}.png", scheme(dark)),
     );
 
+    // Quick add again, typing over something that already exists, so the
+    // duplicate check has something to say. Both states are on show: a
+    // near-identical title the local pass caught on its own, and a synonym only
+    // the model could have.
+    {
+        let seeded = seed_for_duplicates(today);
+        let dialog = QuickAddDialog::new();
+        dialog.prepare(seeded.vocabulary(), today, "Inbox");
+        dialog.set_candidate_source(move |title: &str| {
+            planner::model::similar::candidates(
+                &seeded,
+                title,
+                None,
+                planner::model::duplicate::MAX_CANDIDATES,
+                planner::model::similar::RECALL_FLOOR,
+            )
+        });
+        dialog.set_text("Ring the plumber about the boiler");
+        dialog.apply_judgements(planner::model::duplicate::Judgements {
+            duplicates: vec![planner::model::duplicate::Judgement {
+                id: "dup-plumber".into(),
+                verdict: planner::model::duplicate::Verdict::Same,
+                reason: "ringing and calling the plumber are the same".into(),
+            }],
+        });
+        render_dialog(
+            &dialog,
+            480,
+            420,
+            &format!("{out}/quick-add-duplicate-{}.png", scheme(dark)),
+        );
+    }
+
     // The detail panel, on the task with the most going on.
     let busiest = store
         .tasks()
@@ -248,6 +281,29 @@ fn today() -> NaiveDate {
 }
 
 /// A store with enough in it to show every part of a row.
+/// A store holding exactly the two tasks the duplicate preview needs: one the
+/// word comparison catches on its own, and one only a model could.
+fn seed_for_duplicates(today: NaiveDate) -> Store {
+    let dir = std::env::temp_dir().join("planner-preview-duplicates");
+    let _ = std::fs::remove_dir_all(&dir);
+    let (mut store, _) = Store::open_at(dir.join("planner.json"));
+    let now = today.and_hms_opt(9, 0, 0).unwrap().and_utc();
+
+    let home = store.add_project(Project::new("Home", Color::Green), now);
+
+    // Fixed ids so the preview can hand the dialog a verdict about one of them.
+    let mut plumber =
+        planner::model::task::Task::new(home.clone(), "Call the plumber about the boiler", now);
+    plumber.id = planner::model::TaskId::from_raw("dup-plumber");
+    store.add_task(plumber);
+
+    let mut boiler = planner::model::task::Task::new(home, "Ring the boiler service line", now);
+    boiler.id = planner::model::TaskId::from_raw("dup-boiler");
+    store.add_task(boiler);
+
+    store
+}
+
 fn seeded() -> Store {
     let dir = std::env::temp_dir().join("planner-preview");
     let _ = std::fs::remove_dir_all(&dir);

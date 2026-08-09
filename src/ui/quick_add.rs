@@ -14,6 +14,16 @@
 //! says only "this was understood" in one uniform colour, and the chips
 //! underneath say what it was understood *as*.
 //!
+//! **The duplicate check lives here too.** Adding a task is the most frequent
+//! thing anyone does in this app, and `window.rs` deliberately chose an undo
+//! toast over a confirmation because asking first for something that frequent
+//! would be intolerable. Nothing below changes that for the ordinary case: what
+//! resembles the task being typed appears *underneath the entry, while it is
+//! being typed*, in the same place the chips already report what was
+//! understood, and Add stays one keystroke away. Only a near-certain match
+//! stops to ask, and it is the one case where the toast is no help — undo
+//! removes the task you just added, not the one you already had.
+//!
 //! An `AdwDialog`, so it is a centred dialog on a desktop and a bottom sheet
 //! on a narrow screen without this file knowing which.
 
@@ -24,8 +34,10 @@ use gtk::pango;
 
 use chrono::NaiveDate;
 
+use crate::model::duplicate::{CheckError, Judgements, Verdict};
 use crate::model::parse::quick_add::{QuickAdd, SpanKind};
 use crate::model::parse::{parse_quick_add, Vocabulary};
+use crate::model::similar::Candidate;
 use crate::ui::task_object::format_date;
 
 /// How long to wait after a keystroke before re-parsing.
@@ -33,6 +45,22 @@ use crate::ui::task_object::format_date;
 /// Short enough to feel immediate, long enough that a fast typist is not
 /// re-parsing and re-rendering chips on every letter of a long sentence.
 const PARSE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(120);
+
+/// How long to wait after a keystroke before asking the model.
+///
+/// Much longer than the parse debounce, and for a different reason: the parse
+/// is free and this is a network round trip. Waiting until someone has stopped
+/// typing for half a second is the difference between one request per task and
+/// one per word.
+const CHECK_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(600);
+
+/// A title shorter than this is not worth asking about — "Buy" matches half the
+/// list and means nothing yet.
+const MIN_TITLE_FOR_CHECK: usize = 6;
+
+/// How many similar tasks to show. More than a handful stops being a hint and
+/// becomes a second task list.
+const MAX_SHOWN: usize = 5;
 
 mod imp {
     use super::*;
@@ -55,6 +83,36 @@ mod imp {
         /// Where the task goes when the line does not say, and what to call it
         /// on the default chip.
         pub default_project: RefCell<String>,
+
+        // --- the duplicate check ---------------------------------------
+        pub similar_host: RefCell<Option<gtk::Box>>,
+        pub similar_heading: RefCell<Option<gtk::Label>>,
+        pub similar_list: RefCell<Option<gtk::ListBox>>,
+        /// Shown while the model is being asked, so a pause is a pause and not
+        /// a verdict of "nothing found".
+        pub checking_row: RefCell<Option<gtk::Box>>,
+
+        /// Reads the store. The dialog is not allowed to hold one — the window
+        /// owns that — so it holds the question instead.
+        #[allow(clippy::type_complexity)]
+        pub candidate_source: RefCell<Option<Box<dyn Fn(&str) -> Vec<Candidate>>>>,
+        /// Absent means the local word comparison only, which is the whole
+        /// feature for anyone who has not configured a key.
+        pub api_key: RefCell<Option<String>>,
+
+        pub candidates: RefCell<Vec<Candidate>>,
+        pub judgements: RefCell<Option<Judgements>>,
+        pub check_debounce: RefCell<Option<glib::SourceId>>,
+        /// Bumped per request. A reply carrying anything else is about a title
+        /// that has since been edited, and is dropped.
+        pub check_generation: Cell<u64>,
+        /// The title the in-flight or completed check was about, so an edit
+        /// that lands back on the same words does not ask twice.
+        pub checked_title: RefCell<String>,
+
+        /// Set once the user has answered the confirmation for the current
+        /// title. Without it, "Add anyway" would re-open the same dialog.
+        pub confirmed: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -76,6 +134,11 @@ mod imp {
             if let Some(id) = self.debounce.take() {
                 id.remove();
             }
+            if let Some(id) = self.check_debounce.take() {
+                id.remove();
+            }
+            // Any request already in flight answers into a dropped weak
+            // reference and stops there; the worker thread finishes on its own.
         }
 
         fn signals() -> &'static [Signal] {
@@ -85,6 +148,11 @@ mod imp {
                     // The line the user committed. The window parses and files
                     // it — this dialog never touches the store.
                     Signal::builder("submitted")
+                        .param_types([str::static_type()])
+                        .build(),
+                    // The user picked one of the similar tasks instead of
+                    // adding a new one. Carries its id; the window opens it.
+                    Signal::builder("open-existing")
                         .param_types([str::static_type()])
                         .build(),
                 ]
@@ -170,6 +238,46 @@ impl QuickAddDialog {
         hint.add_css_class("dimmed");
         body.append(&hint);
 
+        // What already looks like this. Under the chips, because it answers the
+        // same kind of question they do — "here is what the app made of what
+        // you typed" — and above the buttons, because it is meant to be read
+        // before Add is pressed rather than after.
+        let similar_host = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(6)
+            .visible(false)
+            .build();
+
+        let similar_heading = gtk::Label::builder()
+            .label("Similar tasks")
+            .xalign(0.0)
+            .build();
+        similar_heading.add_css_class("caption-heading");
+        similar_heading.add_css_class("dimmed");
+        similar_host.append(&similar_heading);
+
+        let similar_list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        similar_list.add_css_class("boxed-list");
+        similar_host.append(&similar_list);
+
+        let checking_row = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
+            .spacing(6)
+            .visible(false)
+            .build();
+        let spinner = adw::Spinner::new();
+        spinner.set_size_request(14, 14);
+        checking_row.append(&spinner);
+        let checking_label = gtk::Label::new(Some("Checking for duplicates…"));
+        checking_label.add_css_class("caption");
+        checking_label.add_css_class("dimmed");
+        checking_row.append(&checking_label);
+        similar_host.append(&checking_row);
+
+        body.append(&similar_host);
+
         let keep_adding = gtk::CheckButton::builder()
             .label("Keep adding")
             .tooltip_text("Stay open after adding, for a run of tasks")
@@ -220,6 +328,10 @@ impl QuickAddDialog {
         imp.hint.replace(Some(hint));
         imp.add.replace(Some(add));
         imp.keep_adding.replace(Some(keep_adding));
+        imp.similar_host.replace(Some(similar_host));
+        imp.similar_heading.replace(Some(similar_heading));
+        imp.similar_list.replace(Some(similar_list));
+        imp.checking_row.replace(Some(checking_row));
 
         self.install_shortcuts();
     }
@@ -287,7 +399,290 @@ impl QuickAddDialog {
             // title is not a task.
             add.set_sensitive(!parsed.title.trim().is_empty());
         }
+        let title = parsed.title.trim().to_string();
         imp.parsed.replace(parsed);
+        self.refresh_similar(&title);
+    }
+
+    /// Recompute what resembles `title` and show it.
+    ///
+    /// The local half is pure and microsecond-scale, so it runs on every parse
+    /// with no debounce of its own. The model is asked separately and later.
+    fn refresh_similar(&self, title: &str) {
+        let imp = self.imp();
+
+        // A changed title invalidates the previous answer. Clearing the
+        // verdicts here is what stops a "same task" badge outliving the words
+        // it was about.
+        if imp.checked_title.borrow().as_str() != title {
+            imp.judgements.replace(None);
+            imp.confirmed.set(false);
+        }
+
+        let candidates = match imp.candidate_source.borrow().as_ref() {
+            Some(source) if title.chars().count() >= 2 => source(title),
+            _ => Vec::new(),
+        };
+        imp.candidates.replace(candidates);
+
+        self.show_similar();
+        self.schedule_check(title);
+    }
+
+    /// Rebuild the list of similar tasks from the current candidates and
+    /// whatever the model has said about them so far.
+    fn show_similar(&self) {
+        let imp = self.imp();
+        let (Some(host), Some(list)) = (
+            imp.similar_host.borrow().clone(),
+            imp.similar_list.borrow().clone(),
+        ) else {
+            return;
+        };
+
+        while let Some(child) = list.first_child() {
+            list.remove(&child);
+        }
+
+        let shown = self.shown();
+        let judgements = imp.judgements.borrow();
+
+        host.set_visible(!shown.is_empty());
+        if let Some(heading) = imp.similar_heading.borrow().as_ref() {
+            heading.set_visible(!shown.is_empty());
+        }
+
+        for candidate in &shown {
+            let judgement = judgements
+                .as_ref()
+                .and_then(|judged| judged.for_id(candidate.id.as_str()));
+            list.append(&self.build_similar_row(candidate, judgement));
+        }
+    }
+
+    /// The candidates that belong on screen.
+    ///
+    /// The gathered set is deliberately wider than this — it is gathered at
+    /// [`RECALL_FLOOR`](crate::model::similar::RECALL_FLOOR) so the model gets
+    /// a chance to recognise a pair the words alone would not justify showing.
+    /// Which of those actually appear is decided here:
+    ///
+    /// - judged **different**: never. That is the app showing its working.
+    /// - judged **same** or **related**: always, whatever the word score was.
+    ///   This is the entire point of asking.
+    /// - **unjudged**: only above the display floor, which is the behaviour
+    ///   with no key, no network, or a reply still in flight.
+    fn shown(&self) -> Vec<Candidate> {
+        let imp = self.imp();
+        let candidates = imp.candidates.borrow();
+        let judgements = imp.judgements.borrow();
+
+        candidates
+            .iter()
+            .filter(|candidate| {
+                match judgements
+                    .as_ref()
+                    .and_then(|judged| judged.for_id(candidate.id.as_str()))
+                {
+                    Some(judgement) => judgement.verdict != Verdict::Different,
+                    None => candidate.score >= crate::model::similar::FLOOR,
+                }
+            })
+            .take(MAX_SHOWN)
+            .cloned()
+            .collect()
+    }
+
+    /// One row: what the task is called, where it lives, and — once the model
+    /// has answered — what it made of the pair.
+    fn build_similar_row(
+        &self,
+        candidate: &Candidate,
+        judgement: Option<&crate::model::duplicate::Judgement>,
+    ) -> gtk::Widget {
+        let row = adw::ActionRow::builder()
+            .title(glib::markup_escape_text(&candidate.title))
+            .activatable(true)
+            .build();
+
+        // The subtitle carries the model's reason when there is one, because
+        // "why does it think these are the same?" is the question the person
+        // is being asked to answer and they cannot without it.
+        let subtitle = match judgement {
+            Some(judged) if !judged.reason.is_empty() => {
+                format!("{} · {}", candidate.context, judged.reason)
+            }
+            _ => candidate.context.clone(),
+        };
+        row.set_subtitle(&glib::markup_escape_text(&subtitle));
+
+        let icon = gtk::Image::from_icon_name(if candidate.checked {
+            "object-select-symbolic"
+        } else {
+            "view-list-symbolic"
+        });
+        row.add_prefix(&icon);
+
+        // A badge only where there is something to say. An unjudged near-miss
+        // speaks for itself by being in the list at all.
+        //
+        // The two blocking states share `warning` rather than separating into
+        // amber and red: red is for failure and lost data, and adding a second
+        // copy of a task is neither. What distinguishes them is already in the
+        // words — "Same task" carries a reason underneath, "Near-identical" is
+        // the app's own guess with nothing to show for it.
+        let badge = match judgement.map(|judged| judged.verdict) {
+            Some(Verdict::Same) => Some(("Same task", "warning")),
+            Some(Verdict::Related) => Some(("Related", "dimmed")),
+            Some(Verdict::Different) => None,
+            None if candidate.is_strong() => Some(("Near-identical", "warning")),
+            None => None,
+        };
+        if let Some((text, style)) = badge {
+            let label = gtk::Label::new(Some(text));
+            label.add_css_class("caption");
+            label.add_css_class(style);
+            row.add_suffix(&label);
+        }
+
+        row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+        row.set_tooltip_text(Some("Open this task instead"));
+
+        let id = candidate.id.as_str().to_string();
+        row.connect_activated(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            move |_| {
+                dialog.emit_by_name::<()>("open-existing", &[&id]);
+                dialog.close();
+            }
+        ));
+
+        row.upcast()
+    }
+
+    /// Ask the model shortly, if there is anything worth asking about.
+    fn schedule_check(&self, title: &str) {
+        let imp = self.imp();
+        if let Some(id) = imp.check_debounce.take() {
+            id.remove();
+        }
+
+        let Some(key) = imp.api_key.borrow().clone() else {
+            return;
+        };
+        // Nothing to compare against, nothing to ask. The local pass having
+        // found nothing is itself the answer: a title sharing no words with
+        // anything on the list is not a duplicate of it.
+        if imp.candidates.borrow().is_empty()
+            || title.chars().count() < MIN_TITLE_FOR_CHECK
+            || imp.checked_title.borrow().as_str() == title
+        {
+            return;
+        }
+
+        let title = title.to_string();
+        let id = glib::timeout_add_local_once(
+            CHECK_DEBOUNCE,
+            glib::clone!(
+                #[weak(rename_to = dialog)]
+                self,
+                move || {
+                    dialog.imp().check_debounce.replace(None);
+                    dialog.start_check(key, title);
+                }
+            ),
+        );
+        imp.check_debounce.replace(Some(id));
+    }
+
+    fn start_check(&self, key: String, title: String) {
+        let imp = self.imp();
+        let candidates = imp.candidates.borrow().clone();
+        if candidates.is_empty() {
+            return;
+        }
+
+        let generation = imp.check_generation.get().wrapping_add(1);
+        imp.check_generation.set(generation);
+        imp.checked_title.replace(title.clone());
+        self.set_checking(true);
+
+        crate::ui::duplicate_check::spawn(
+            key,
+            title,
+            candidates,
+            generation,
+            glib::clone!(
+                #[weak(rename_to = dialog)]
+                self,
+                move |generation, outcome| dialog.finish_check(generation, outcome)
+            ),
+        );
+    }
+
+    /// A reply landed. Main thread, by construction.
+    fn finish_check(&self, generation: u64, outcome: Result<Judgements, CheckError>) {
+        let imp = self.imp();
+        // A reply about a title the user has moved on from. Dropped in silence:
+        // there is nothing for anyone to do about it.
+        if generation != imp.check_generation.get() {
+            return;
+        }
+        self.set_checking(false);
+
+        match outcome {
+            Ok(judgements) => {
+                imp.judgements.replace(Some(judgements));
+                self.show_similar();
+            }
+            // Offline, no key, a bad key, a decline. All of them mean the same
+            // thing here — the local candidates stay exactly as they are and
+            // nothing is said about it. Someone adding a task is not in a
+            // position to fix an API key, and a banner over the entry would be
+            // the app making its problem into theirs.
+            Err(error) => {
+                imp.judgements.replace(None);
+                eprintln!("planner: duplicate check unavailable: {error}");
+            }
+        }
+    }
+
+    fn set_checking(&self, checking: bool) {
+        if let Some(row) = self.imp().checking_row.borrow().as_ref() {
+            row.set_visible(checking);
+        }
+        if let Some(host) = self.imp().similar_host.borrow().as_ref() {
+            if checking {
+                host.set_visible(true);
+            }
+        }
+    }
+
+    /// The candidates this would stop to ask about, if Add were pressed now.
+    ///
+    /// The model's verdict wins where there is one, because it saw the words
+    /// and the local pass only counted them. Where there is none — no key, no
+    /// network, a reply still in flight — a near-identical local match stands
+    /// in, so the feature degrades to something rather than nothing.
+    fn blocking(&self) -> Vec<Candidate> {
+        let imp = self.imp();
+        let candidates = imp.candidates.borrow();
+        match imp.judgements.borrow().as_ref() {
+            Some(judged) => {
+                let blocking = judged.blocking();
+                candidates
+                    .iter()
+                    .filter(|candidate| blocking.contains(&candidate.id.as_str()))
+                    .cloned()
+                    .collect()
+            }
+            None => candidates
+                .iter()
+                .filter(|candidate| candidate.is_strong())
+                .cloned()
+                .collect(),
+        }
     }
 
     /// Rebuild the row of chips describing the parse.
@@ -310,6 +705,12 @@ impl QuickAddDialog {
     }
 
     /// Hand the line to whoever is listening, and either close or clear.
+    ///
+    /// Everything above this point is advisory — the list under the entry says
+    /// what it found and Add still adds. This is the one place that stops, and
+    /// only for a match strong enough that adding is almost certainly a
+    /// mistake. The undo toast that normally covers a wrong add cannot: it
+    /// deletes the new task, not the duplicate already on the list.
     fn submit(&self) {
         let imp = self.imp();
         let Some(entry) = imp.entry.borrow().clone() else {
@@ -317,6 +718,14 @@ impl QuickAddDialog {
         };
         if imp.parsed.borrow().title.trim().is_empty() {
             return;
+        }
+
+        if !imp.confirmed.get() {
+            let blocking = self.blocking();
+            if !blocking.is_empty() {
+                self.confirm_duplicate(blocking);
+                return;
+            }
         }
 
         let text = entry.text().to_string();
@@ -333,11 +742,84 @@ impl QuickAddDialog {
             // A fresh parse clears the chips and disables Add; without it the
             // dialog would sit there claiming to have understood the task it
             // has just filed.
+            imp.confirmed.set(false);
+            imp.checked_title.replace(String::new());
+            imp.judgements.replace(None);
             self.reparse();
             self.set_focus(Some(&entry));
         } else {
             self.close();
         }
+    }
+
+    /// Ask before adding something that already exists.
+    ///
+    /// Cancel first and the specific verb last, per the HIG. "Add Anyway" is
+    /// suggested rather than destructive: the user typed this on purpose and
+    /// the app is second-guessing them, so the affirmative is the one that
+    /// should be easy to hit.
+    fn confirm_duplicate(&self, blocking: Vec<Candidate>) {
+        let title = self.imp().parsed.borrow().title.trim().to_string();
+
+        let body = match blocking.as_slice() {
+            [only] => format!(
+                "“{}” is already on your list, in {}.\n\nAdd “{}” as well?",
+                only.title,
+                if only.context.is_empty() {
+                    "your tasks".to_string()
+                } else {
+                    only.context.clone()
+                },
+                title,
+            ),
+            many => {
+                let names = many
+                    .iter()
+                    .map(|candidate| format!("• {}", candidate.title))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format!("These are already on your list:\n\n{names}\n\nAdd “{title}” as well?")
+            }
+        };
+
+        let alert = adw::AlertDialog::new(Some("This looks like a duplicate"), Some(&body));
+        alert.add_response("cancel", "Cancel");
+        alert.add_response("open", "Open Existing");
+        alert.add_response("add", "Add Anyway");
+        alert.set_response_appearance("add", adw::ResponseAppearance::Suggested);
+        alert.set_default_response(Some("cancel"));
+        alert.set_close_response("cancel");
+
+        let first = blocking
+            .first()
+            .map(|candidate| candidate.id.as_str().to_string())
+            .unwrap_or_default();
+
+        alert.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = dialog)]
+                self,
+                move |_, response| match response {
+                    "add" => {
+                        // Sticky for this title: having answered once, pressing
+                        // Add again must add rather than ask the same question.
+                        dialog.imp().confirmed.set(true);
+                        dialog.submit();
+                    }
+                    "open" => {
+                        dialog.emit_by_name::<()>("open-existing", &[&first]);
+                        dialog.close();
+                    }
+                    // Cancel leaves the entry exactly as it was, so the obvious
+                    // next move — editing the title into something distinct —
+                    // costs nothing.
+                    _ => {}
+                }
+            ),
+        );
+
+        alert.present(Some(self));
     }
 
     /// What the entry currently holds, for tests.
@@ -363,6 +845,44 @@ impl QuickAddDialog {
     /// The most recent parse.
     pub fn parsed(&self) -> QuickAdd {
         self.imp().parsed.borrow().clone()
+    }
+
+    /// Teach the dialog how to find tasks resembling a title.
+    ///
+    /// A closure rather than a `Store`, so the rule that this file never
+    /// touches one survives the feature. The window owns the store and hands
+    /// down the question.
+    pub fn set_candidate_source(&self, source: impl Fn(&str) -> Vec<Candidate> + 'static) {
+        self.imp().candidate_source.replace(Some(Box::new(source)));
+        self.reparse();
+    }
+
+    /// The key that turns on the semantic half. `None` leaves the local word
+    /// comparison, which is the whole feature until someone configures one.
+    pub fn set_api_key(&self, key: Option<String>) {
+        self.imp()
+            .api_key
+            .replace(key.filter(|key| !key.trim().is_empty()));
+    }
+
+    /// The similar tasks currently on screen, for tests.
+    ///
+    /// What is displayed, not what was gathered — the gathered set is wider on
+    /// purpose and most of it never reaches a person. See [`Self::shown`].
+    pub fn similar(&self) -> Vec<Candidate> {
+        self.shown()
+    }
+
+    /// Whether pressing Add right now would stop to ask, for tests.
+    pub fn would_confirm(&self) -> bool {
+        !self.imp().confirmed.get() && !self.blocking().is_empty()
+    }
+
+    /// Pretend the model answered, for tests. The socket is not exercised
+    /// here; [`crate::model::duplicate`] covers the wire format headlessly.
+    pub fn apply_judgements(&self, judgements: Judgements) {
+        self.imp().judgements.replace(Some(judgements));
+        self.show_similar();
     }
 
     /// Whether the dialog will stay open after adding.
