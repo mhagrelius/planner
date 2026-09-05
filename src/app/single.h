@@ -19,7 +19,9 @@ public:
     // Where the socket lives: $XDG_RUNTIME_DIR/planner.sock, else the temp dir.
     static QString socketPath();
     // Try to hand `args` to a running instance. Returns the reply if one
-    // answered, nothing if there is no instance.
+    // answered, nothing if there is no instance. A window that holds the socket
+    // but does not answer is a reply too: `ok` false with a `busy` error, so
+    // the caller never writes the file underneath a running window.
     struct Reply { QString output; bool ok; };
     static std::optional<Reply> forward(const QStringList &args, int timeoutMs = 700);
 

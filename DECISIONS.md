@@ -99,6 +99,16 @@ open, this is what happened and why.
   on a 30-second tick; anything already overdue at launch is marked seen.
 - The GTK app's `--new-task` launch option was not carried over; `Ctrl+N` in the
   window and `planner agent add` cover it.
+- **A window that holds the socket and does not answer is a `busy` error, never a
+  fallback to the file** (2026-09-05, owner's call). `planner agent …` used to
+  treat a connect or reply timeout like "no window" and edit planner.json itself,
+  which is the one path to two writers: the window's next two-second save would
+  overwrite the edit silently. Now only "nobody listening" (no socket, or a stale
+  one from a crash, both `ECONNREFUSED`/`ENOENT`) means the file is free; a
+  timeout prints `{"ok": false, "error": "busy", …}` and exits 1 with nothing
+  changed. A bare second launch against a wedged window exits quietly instead of
+  opening a second window over the same file. `tests/test_single.cpp` holds the
+  socket open with a fake window and checks all three answers.
 
 ## Not built
 

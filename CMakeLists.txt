@@ -72,6 +72,11 @@ foreach(t dates recurrence quickadd query store search schedule present agent or
     target_link_libraries(test_${t} PRIVATE plannercore Qt6::Test)
     add_test(NAME ${t} COMMAND test_${t})
 endforeach()
+# The single-instance socket is app code, tested on its own with a fake window.
+qt_add_executable(test_single tests/test_single.cpp src/app/single.cpp)
+target_include_directories(test_single PRIVATE src/app)
+target_link_libraries(test_single PRIVATE plannercore Qt6::Network Qt6::Test)
+add_test(NAME single COMMAND test_single)
 
 include(GNUInstallDirs)
 if(PLANNER_APP)
