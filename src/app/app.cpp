@@ -1763,7 +1763,7 @@ void App::buildStatus() {
              << hint(QStringLiteral("ctrl+z"), QStringLiteral("undo"));
     } else if (!m_openTask.isEmpty() && m_detail.contains(QStringLiteral("title"))) {
         left = m_detail.value(QStringLiteral("title")).toString();
-        right = QStringLiteral("tab fields · ctrl+d schedule · ctrl+enter subtask · ctrl+shift+enter note · esc back");
+        right = QStringLiteral("ctrl+d date · ctrl+enter subtask · ctrl+shift+enter note · esc back");
     } else if (m_isProject && m_board) {
         left = QStringLiteral("#%1 · board").arg(view->title);
         right = QStringLiteral("←→ column · ctrl+←→ move task · ctrl+shift+b list");
