@@ -241,21 +241,25 @@ Rectangle {
                             MouseArea { id: noteHover; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
                         }
                     }
-                    Row {
+                    // A plain field, the key named quietly at its far end until it is used.
+                    Item {
                         width: parent.width
-                        spacing: T.s(10)
-                        Keycap { key: "ctrl+shift+enter"; keyColor: T.meta; anchors.verticalCenter: parent.verticalCenter }
+                        height: T.s(28)
                         TextInput {
                             id: noteField
-                            width: parent.width - T.s(140)
-                            font.family: T.sans; font.pointSize: T.f(13); color: T.text
+                            anchors.left: parent.left
+                            anchors.right: noteHint.visible ? noteHint.left : parent.right
+                            anchors.rightMargin: noteHint.visible ? T.s(10) : 0
+                            anchors.verticalCenter: parent.verticalCenter
+                            font.family: T.sans; font.pointSize: T.f(14); color: T.text
                             selectionColor: T.activeFill; selectedTextColor: T.activeText
                             activeFocusOnTab: true
-                            anchors.verticalCenter: parent.verticalCenter
-                            Mono { visible: !noteField.text.length; text: "add a note"; px: 12; color: T.meta; anchors.verticalCenter: parent.verticalCenter }
+                            Sans { visible: !noteField.text.length; text: noteField.activeFocus ? "what happened?" : "add a note"; px: 14; color: T.hintText; anchors.verticalCenter: parent.verticalCenter }
                             onAccepted: { App.addNote(pane.taskId, text); text = "" }
                             Keys.onEscapePressed: function(event) { text = ""; pane.forceActiveFocus(); event.accepted = true }
                         }
+                        Mono { id: noteHint; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; visible: !noteField.activeFocus && !noteField.text.length
+                               text: noteField.activeFocus ? "enter adds" : "ctrl+shift+enter"; px: 10; color: T.meta }
                     }
                 }
                 Item { width: 1; height: T.s(18) }
