@@ -21,7 +21,7 @@ private slots:
     void theRankingTheDesignShows() {
         QTemporaryDir dir;
         Store store = Store::openAt(dir.path() + "/planner.json");
-        const ProjectId work = store.addProject(Project::create("Work", Color::Blue));
+        const ProjectId work = store.addProject(Project::create("Work", Color::Blue), now());
         for (const char *title : {"Email Sam about the lease", "Water the plants", "Book the dentist", "File the tax return"})
             store.addTask(Task::create(inboxId(), QString::fromUtf8(title), now()));
         store.addTask(Task::create(work, "Tidy the shared drive", now()));
@@ -40,8 +40,8 @@ private slots:
     void projectsAndLabelsAreHitsToo() {
         QTemporaryDir dir;
         Store store = Store::openAt(dir.path() + "/planner.json");
-        store.addProject(Project::create("Work", Color::Blue));
-        store.labelForName("workout");
+        store.addProject(Project::create("Work", Color::Blue), now());
+        store.labelForName("workout", now());
         const QList<Hit> hits = search(store, "work", 50);
         QCOMPARE(hits.size(), 2);
         QCOMPARE(hits[0].kind, Hit::ProjectHit);

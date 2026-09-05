@@ -36,8 +36,8 @@ class TestAgent : public QObject {
 private slots:
     void aTaskIsAddedFromTheSameLineTheDialogWouldTake() {
         Store s = store();
-        const ProjectId work = s.addProject(Project::create("Work", Color::Blue));
-        s.projectMut(work)->addSection(Section::create("Admin"));
+        const ProjectId work = s.addProject(Project::create("Work", Color::Blue), now());
+        s.addSection(Section::create(work, "Admin"), now());
         const QJsonObject response = json(s, "add Email Sam about the lease #Work /Admin @email p2 friday 9am");
         QCOMPARE(response["ok"].toBool(), true);
         QCOMPARE(response["action"].toString(), "added");
@@ -59,7 +59,7 @@ private slots:
     }
     void aSubtaskSharesItsParentsProject() {
         Store s = store();
-        const ProjectId work = s.addProject(Project::create("Work", Color::Blue));
+        const ProjectId work = s.addProject(Project::create("Work", Color::Blue), now());
         s.addTask(Task::create(work, "Move house", now()));
         const QJsonObject task = json(s, "subtask 'Move house' Pack the books #Inbox p1")["task"].toObject();
         QCOMPARE(task["content"].toString(), "Pack the books");
@@ -92,7 +92,7 @@ private slots:
     }
     void namingTheThingYouMeant() {
         Store s = store();
-        const ProjectId work = s.addProject(Project::create("Work", Color::Blue));
+        const ProjectId work = s.addProject(Project::create("Work", Color::Blue), now());
         s.addTask(Task::create(inboxId(), "Email Sam", now()));
         s.addTask(Task::create(work, "Email Sam again", now()));
         const agent::Result ambiguous = run(s, "complete Email");
@@ -122,7 +122,7 @@ private slots:
     }
     void listingAndUnderstanding() {
         Store s = store();
-        s.addProject(Project::create("Work", Color::Blue));
+        s.addProject(Project::create("Work", Color::Blue), now());
         run(s, "add Urgent thing #Work p1 today");
         run(s, "add Lesser thing #Work p3 today");
         run(s, "add Home thing today");
@@ -152,8 +152,8 @@ private slots:
     }
     void overviewShowAndSearch() {
         Store s = store();
-        const ProjectId work = s.addProject(Project::create("Work", Color::Blue));
-        s.projectMut(work)->addSection(Section::create("Admin"));
+        const ProjectId work = s.addProject(Project::create("Work", Color::Blue), now());
+        s.addSection(Section::create(work, "Admin"), now());
         run(s, "add Overdue thing #Work yesterday");
         run(s, "add Due today #Work today @email");
         run(s, "add Inbox thing");
@@ -180,7 +180,7 @@ private slots:
         QCOMPARE(shown["description"].toString(), "Ring the agent first");
         QCOMPARE(shown["subtasks"].toArray()[0].toObject()["content"].toString(), "Pack the books");
         QCOMPARE(shown["reminders"].toArray()[0].toString(), "30 minutes before");
-        s.addProject(Project::create("Leasehold", Color::Blue));
+        s.addProject(Project::create("Leasehold", Color::Blue), now());
         run(s, "add Email Sam about the lease");
         QStringList kinds;
         for (const QJsonValue &hit : json(s, "search lease")["hits"].toArray()) kinds << hit.toObject()["kind"].toString();
@@ -188,7 +188,7 @@ private slots:
     }
     void updating() {
         Store s = store();
-        s.addProject(Project::create("Work", Color::Blue));
+        s.addProject(Project::create("Work", Color::Blue), now());
         run(s, "add Email Sam");
         QJsonObject response = json(s, "update Email Sam due=next friday 9am");
         QCOMPARE(response["task"].toObject()["due"].toString(), "2026-08-07 09:00");
@@ -217,7 +217,7 @@ private slots:
         QCOMPARE(s.labels().size(), 1);
         // Sections are looked for in the project the task is moving to.
         const ProjectId work = s.projectByName("Work")->id;
-        s.projectMut(work)->addSection(Section::create("Doing"));
+        s.addSection(Section::create(work, "Doing"), now());
         run(s, "add Chase Pat");
         response = json(s, "update Chase project=Work section=Doing");
         QCOMPARE(response["task"].toObject()["section"].toString(), "Doing");
@@ -237,11 +237,11 @@ private slots:
         run(s, "subtask 'Move house' Book a van");
         QCOMPARE(json(s, "delete Move house")["count"].toInt(), 3);
         QVERIFY(s.tasks().isEmpty());
-        s.addProject(Project::create("Home", Color::Blue));
+        s.addProject(Project::create("Home", Color::Blue), now());
         QJsonObject response = json(s, "add-project Loft conversion parent=Home");
         QCOMPARE(response["project"].toObject()["name"].toString(), "Loft conversion");
         QCOMPARE(response["project"].toObject()["parent"].toString(), "Home");
-        s.addProject(Project::create("Work", Color::Blue));
+        s.addProject(Project::create("Work", Color::Blue), now());
         run(s, "add Email Sam #Work");
         run(s, "add Ring Pat #Work");
         response = json(s, "remove-project Work");

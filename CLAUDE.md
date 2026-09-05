@@ -21,7 +21,11 @@ skill — read it before changing theming, scaling or packaging.
   the clock. Scratch runs (`--demo`, `--data`, `--grab`) do not take the
   single-instance socket; `PLANNER_SOCKET_SUFFIX=-x` isolates one that should.
 - `./build/planner agent help` — the CLI. Answered by the running window over the
-  socket when there is one, else against the file directly.
+  socket when there is one, else against the file directly. `planner sync
+  now|status` likewise.
+- Sync needs `~/.config/planner/config.json` with `sync_url` and `sync_token`;
+  `server/README.md` is the server. `cargo test --workspace` runs the Rust core
+  and server suites; the C++ core must keep reading what planner-core writes.
 - Install: `cmake --install build --prefix ~/.local` (or `./install.sh`);
   `packaging/PKGBUILD` for pacman.
 
@@ -31,9 +35,13 @@ skill — read it before changing theming, scaling or packaging.
   the on-disk shape), `dates` (English dates, times, repeat phrases), `quickadd`,
   `store` (the only thing that reads or writes planner.json), `query` (the filter
   language), `search`, `schedule` (reminders), `present` (row strings, built-in
-  views), `agent` (the CLI surface), `demo`.
+  views), `agent` (the CLI surface), `order` (fractional keys), `sync` (the
+  three-snapshot planner, gather/apply), `config`, `demo`.
+- `core/`, `server/` — the Rust `planner-core` and `planner-server` (Postgres);
+  the container is built from here with `packaging/deploy-server.sh`.
 - `src/app/` — `App` singleton (`app.cpp`: every surface as pre-formatted rows and
-  one `changed()`), `icons` (SVG recolouring image provider), `single` (the
+  one `changed()`, plus the sync passes), `remote` (planner-server over HTTP on a
+  worker thread), `icons` (SVG recolouring image provider), `single` (the
   socket), `main`, and the QML in `qml/` (`T.qml` tokens, `components/`, `views/`).
   QML is a view over `App`; nothing in QML touches the store.
 - `tests/` — one ctest executable per core area.

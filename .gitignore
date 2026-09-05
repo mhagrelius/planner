@@ -2,3 +2,4 @@
 /build-core
 /docs/screens/*.png
 *.zip
+/target

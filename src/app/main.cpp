@@ -1,10 +1,14 @@
 #include "app.h"
+#include "config.h"
 #include "icons.h"
+#include "remote.h"
 #include "palette.h"
 #include "single.h"
 #include "systemtheme.h"
 
 #include <QCommandLineParser>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QQmlApplicationEngine>
@@ -25,6 +29,7 @@ int main(int argc, char *argv[]) {
     QStringList raw;
     for (int i = 1; i < argc; ++i) raw << QString::fromLocal8Bit(argv[i]);
     const bool isAgent = !raw.isEmpty() && raw.first() == QStringLiteral("agent");
+    const bool isSync = !raw.isEmpty() && raw.first() == QStringLiteral("sync");
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("planner"));
@@ -39,7 +44,7 @@ int main(int argc, char *argv[]) {
         "already open. `planner agent <verb>` reads and changes tasks from a script\n"
         "or an assistant, printing JSON; start with `planner agent help`."));
     parser.addHelpOption();
-    parser.addPositionalArgument(QStringLiteral("agent"), QStringLiteral("agent VERB [args]: drive the planner from outside the window."), QStringLiteral("[agent VERB ...]"));
+    parser.addPositionalArgument(QStringLiteral("agent"), QStringLiteral("agent VERB [args]: drive the planner from outside the window.\nsync [now|status]: run a pass against the server named in the config, or say how syncing is going."), QStringLiteral("[agent VERB ... | sync now|status]"));
     const QCommandLineOption dataOption(QStringLiteral("data"), QStringLiteral("Use this planner.json (or directory) instead of the default."), QStringLiteral("path"));
     const QCommandLineOption demoOption(QStringLiteral("demo"), QStringLiteral("Seed a throwaway store with the design's sample tasks."));
     const QCommandLineOption todayOption(QStringLiteral("today"), QStringLiteral("Pin today's date (YYYY-MM-DD), for grabs and tests."), QStringLiteral("date"));
@@ -72,6 +77,57 @@ int main(int argc, char *argv[]) {
         }
         QTextStream(stdout) << planner::agent::render(result) << "\n";
         return result.ok ? 0 : 1;
+    }
+    // `planner sync [now|status]`: the running window answers; with none, one
+    // pass runs here against the file and the result is printed.
+    if (isSync) {
+        if (const auto reply = SingleInstance::forward(raw)) {
+            QTextStream(stdout) << reply->output << "\n";
+            return reply->ok ? 0 : 1;
+        }
+        const planner::Config config = planner::Config::load();
+        const auto target = config.syncTarget();
+        QJsonObject json{{QStringLiteral("ok"), true}, {QStringLiteral("configured"), target.has_value()}, {QStringLiteral("config"), planner::Config::defaultPath()}};
+        if (!target) {
+            json.insert(QStringLiteral("message"), QStringLiteral("Syncing is off. Set sync_url and sync_token in the config."));
+            QTextStream(stdout) << QJsonDocument(json).toJson(QJsonDocument::Indented);
+            return 0;
+        }
+        planner::LoadOutcome outcome;
+        planner::Store store = planner::Store::open(&outcome);
+        json.insert(QStringLiteral("server"), target->first);
+        json.insert(QStringLiteral("file"), store.path());
+        if (raw.value(1) == QStringLiteral("now")) {
+            QString parseError;
+            auto remote = HttpRemote::parse(target->first, target->second, &parseError);
+            planner::sync::Error error;
+            const QString basePath = planner::sync::defaultBasePath(store.path());
+            const planner::sync::Snapshot base = planner::sync::loadBase(basePath);
+            const planner::sync::Snapshot local = planner::sync::snapshotOf(store);
+            const auto incoming = remote ? planner::sync::gather(*remote, base, local, [&](const planner::sync::Key &key) { return store.recordBody(key.kind, key.id); }, &error)
+                                         : std::nullopt;
+            if (!incoming) {
+                json.insert(QStringLiteral("ok"), false);
+                json.insert(QStringLiteral("error"), remote ? error.message : parseError);
+                QTextStream(stdout) << QJsonDocument(json).toJson(QJsonDocument::Indented);
+                return 1;
+            }
+            const auto [report, agreed] = planner::sync::apply(store, *incoming, [](const planner::sync::Key &) { return false; });
+            if (const auto saveError = store.save()) {
+                json.insert(QStringLiteral("ok"), false);
+                json.insert(QStringLiteral("error"), saveError->message);
+                QTextStream(stdout) << QJsonDocument(json).toJson(QJsonDocument::Indented);
+                return 1;
+            }
+            planner::sync::saveBase(agreed, basePath);
+            json.insert(QStringLiteral("written"), report.written);
+            json.insert(QStringLiteral("removed"), report.removed);
+            json.insert(QStringLiteral("unreadable"), report.unreadable);
+            json.insert(QStringLiteral("agreed"), planner::sync::liveCount(agreed));
+        }
+        json.insert(QStringLiteral("records"), planner::sync::liveCount(planner::sync::snapshotOf(store)));
+        QTextStream(stdout) << QJsonDocument(json).toJson(QJsonDocument::Indented);
+        return 0;
     }
     parser.process(app);
 
@@ -111,6 +167,10 @@ int main(int argc, char *argv[]) {
         if (args.isEmpty()) {
             emit App::instance()->windowRequested();
             return {QString(), true};
+        }
+        if (args.first() == QStringLiteral("sync")) {
+            const auto [output, ok] = App::instance()->syncCommand(args);
+            return {output, ok};
         }
         const auto [output, ok] = App::instance()->agentCommand(args);
         return {output, ok};

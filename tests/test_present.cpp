@@ -7,6 +7,7 @@
 using namespace planner;
 
 static QDate d(int y, int m, int day) { return QDate(y, m, day); }
+static QDateTime now() { return QDateTime(d(2026, 7, 30), QTime(12, 0), QTimeZone::utc()); }
 
 class TestPresent : public QObject {
     Q_OBJECT
@@ -55,11 +56,11 @@ private slots:
         QCOMPARE(views[3].emptyTitle, "Nothing pinned");
         QTemporaryDir dir;
         Store store = Store::openAt(dir.path() + "/planner.json");
-        const ProjectId work = store.addProject(Project::create("R&D", Color::Blue));
+        const ProjectId work = store.addProject(Project::create("R&D", Color::Blue), now());
         Project child = Project::create("Admin", Color::Teal);
         child.parentId = work;
-        store.addProject(child);
-        store.addProject(Project::create("Home", Color::Green));
+        store.addProject(child, now());
+        store.addProject(Project::create("Home", Color::Green), now());
         const QList<View> projects = projectViews(store);
         QCOMPARE(projects.size(), 3);
         QCOMPARE(projects[0].query, "#R\\&D");
@@ -67,7 +68,7 @@ private slots:
         QCOMPARE(projects[1].title, "Admin");
         QCOMPARE(projects[2].title, "Home");
         QCOMPARE(projects[0].projectId(), work);
-        store.putFilter(SavedFilter::create("Errands", "@errand", Color::Pink));
+        store.putFilter(SavedFilter::create("Errands", "@errand", Color::Pink), now());
         QCOMPARE(filterViews(store).size(), 1);
         QVERIFY(filterViews(store)[0].filterId().has_value());
     }

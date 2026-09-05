@@ -1,0 +1,61 @@
+[package]
+name = "planner-server"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+description = "One task list, shared between one person's machines"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "planner-server"
+path = "src/main.rs"
+
+[lib]
+name = "planner_server"
+path = "src/lib.rs"
+
+[dependencies]
+# For the record kinds and the sync vocabulary, and nothing else. The server
+# never looks inside a record — it stores and arbitrates — but it must agree
+# with the client about what kinds exist and how a version compares, and
+# sharing the types is the only way to be sure of that. A second definition of
+# either is a bug waiting for someone to change one of them.
+planner-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = [
+    "std",
+    "clock",
+    "serde",
+] }
+
+# The one dependency that is not obviously earned, so: the server's whole job
+# is to refuse a stale write, and `INSERT … ON CONFLICT DO UPDATE … WHERE
+# stored.updated_at < incoming.updated_at` is that in one atomic statement.
+# Against a directory of files it is a lock file plus a read-modify-write that
+# two clients can interleave — which is the bug this exists to prevent.
+#
+# `postgres` rather than `tokio-postgres`: this handles one person's three
+# machines, so a thread per connection is the right shape and an async runtime
+# would be ceremony. Tokio still arrives underneath it, which is the honest
+# cost — it stays on this side of the workspace and never reaches the GTK app
+# or the Flatpak.
+#
+# The two features map the only column types this uses: `timestamptz` to
+# chrono, and `jsonb` to serde_json. Without them a version has to be
+# marshalled through a string on the way in and parsed back on the way out,
+# which is a second place for the two sides to disagree about what an instant
+# is.
+postgres = { version = "0.19", features = [
+    "with-chrono-0_4",
+    "with-serde_json-1",
+] }
+
+# No HTTP crate. Four routes, JSON bodies, one client, on a private network:
+# request line, headers to the blank line, Content-Length, body, respond,
+# close. That is the whole protocol this needs and it is about a hundred lines
+# of exhaustively testable parsing. If it ever needs keep-alive, chunked
+# bodies or TLS, it should take a real server rather than grow one.
+
+[dev-dependencies]
+tempfile = "3"

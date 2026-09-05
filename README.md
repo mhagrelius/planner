@@ -5,7 +5,9 @@ is kept on your own machine, in one plain JSON file you can read, grep and
 back up — the same file the GTK version of this app (the `main` branch)
 writes, so the two can be swapped without migrating anything.
 
-There is no account, no sync and no network code.
+There is no account. Syncing between your own machines is optional, through a
+small server you run yourself (`server/`); with no server named, the app never
+opens a socket.
 
 ## Install
 
@@ -140,6 +142,34 @@ holds the whole document in memory, so a separate process writing the file
 would be overwritten by its next save. With no instance running, the command
 reads and writes the file itself. A second bare launch raises the open window.
 
+### Syncing between machines
+
+Sync is off until you name a server. Put its address and token in
+`~/.config/planner/config.json`:
+
+```json
+{ "sync_url": "http://mattnas:8083", "sync_token": "…" }
+```
+
+The GTK client on `main` reads the same file, and both talk to the same
+`planner-server` (`server/README.md` covers deploying it to a NAS with
+Postgres). A pass runs when the window opens, three seconds after an edit
+settles, every three minutes as a backstop, and whenever the server says
+another machine wrote — it holds a request open for that, so a task ticked
+off elsewhere shows up here in about as long as the network takes.
+
+Sync is per record, last-writer-wins by `updated_at`, and a deletion never
+beats an edit. The store stays canonical and local: a pass merges into the
+same in-memory document everything else edits, and the ordinary save tick
+writes it. Nothing on screen waits for the server, and a clean pass says
+nothing. A server that keeps failing shows up in the status line; `Sync…` in
+the palette says where syncing points and when it last ran, and so does
+
+```sh
+planner sync status        # answered by the running window, or from the file
+planner sync now           # one pass, then the same report
+```
+
 ## How it works
 
 ```
@@ -153,16 +183,21 @@ src/core/           plain C++ over QtCore — no display, ctest-covered
   schedule.*          which reminders are due, and when the next one is
   present.*           how a date reads on a row; the built-in views
   agent.*             the `planner agent` surface: verbs, JSON, its own help
+  order.*             fractional order keys, so a move changes one record
+  sync.*              the sync planner over three snapshots; gather and apply
+  config.*            ~/.config/planner/config.json: where to sync to
   demo.*              the sample store behind --demo
 src/app/
   app.*               the App singleton: state, every derived row, save tick
   icons.*             symbolic SVGs recoloured in the theme's palette
-  single.*            one instance; agent commands forwarded over a socket
+  single.*            one instance; agent and sync commands forwarded over a socket
+  remote.*            planner-server over HTTP, on a worker thread
   qml/                T.qml tokens, components/, views/ — a view over App
 ```
 
 **The store is canonical.** QML reports what the user did; `App` is the only
-thing that mutates a task or writes to disk. Saving is coalesced on a
+thing that mutates a task or writes to disk. A sync pass is another caller of
+the same mutation path, not a second writer. Saving is coalesced on a
 two-second tick through `QSaveFile`, so an interrupted write cannot destroy
 the previous file. A file that fails to parse is moved to
 `planner.json.corrupt-<timestamp>` and the app starts empty; a file from a
@@ -176,7 +211,11 @@ thing to get right.
 today's date takes it as an argument, which is what makes `bin/grab` render
 the design's date on any day and "typing `31st` in September" a test.
 
-Tasks live in `~/.local/share/planner/planner.json`.
+Tasks live in `~/.local/share/planner/planner.json` (schema v2: sections are
+records of their own, hand-sorted lists use order keys, deletions leave
+tombstones for ninety days). A v1 file from the older GTK app reads in and is
+written back as v2. `sync-base.json` beside it records what this machine last
+agreed with the server.
 
 ## Development
 
@@ -192,6 +231,15 @@ OMARCHY_THEME_DIR=/usr/share/omarchy/themes/catppuccin-latte ./build/planner --i
 `bin/grab` renders headless (`QT_QPA_PLATFORM=offscreen`) from the demo store
 pinned to Saturday 5 September 2026, the date the design was drawn for.
 `DECISIONS.md` records where the build departs from `design/HANDOFF.md`.
+
+## The server
+
+`server/` is `planner-server`, in Rust against Postgres, unchanged from the
+`server-sync` work: it stores records and refuses a write whose version is not
+newer, and never evaluates a query or a recurrence. `core/` is `planner-core`,
+which it links for the record kinds. `cargo test --workspace` runs their
+suites; `packaging/deploy-server.sh` builds and pushes the image;
+`server/README.md` has the NAS steps.
 
 ## Licence
 

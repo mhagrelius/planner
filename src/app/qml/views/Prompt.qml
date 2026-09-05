@@ -39,10 +39,10 @@ Item {
             // The prompt row: sigil, the query, and the count at the right.
             Item {
                 width: parent.width
-                height: (prompt.kind === "confirm" ? 0 : T.s(48)) + (App.promptTitle.length ? T.s(28) : 0)
-                Mono { visible: App.promptTitle.length > 0; x: T.s(16); y: T.s(12); text: App.promptTitle; px: 11; color: T.hintText; width: parent.width - T.s(32); wrapMode: Text.Wrap }
+                height: ((prompt.kind === "confirm" || prompt.kind === "status") ? 0 : T.s(48)) + (App.promptTitle.length && prompt.kind !== "status" ? T.s(28) : 0)
+                Mono { visible: App.promptTitle.length > 0 && prompt.kind !== "status"; x: T.s(16); y: T.s(12); text: App.promptTitle; px: 11; color: T.hintText; width: parent.width - T.s(32); wrapMode: Text.Wrap }
                 Row {
-                    visible: prompt.kind !== "confirm"
+                    visible: prompt.kind !== "confirm" && prompt.kind !== "status"
                     anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
                     anchors.leftMargin: T.s(16); anchors.rightMargin: T.s(16); anchors.bottomMargin: T.s(14)
                     spacing: T.s(10)
@@ -85,7 +85,30 @@ Item {
                     Mono { id: count; text: App.promptCount; px: 11; color: T.hintText; anchors.verticalCenter: parent.verticalCenter }
                 }
             }
-            Rectangle { width: parent.width; height: T.line; color: T.surface0; visible: prompt.kind !== "confirm" }
+            Rectangle { width: parent.width; height: T.line; color: T.surface0; visible: prompt.kind !== "confirm" && prompt.kind !== "status" }
+
+            // Sync status: what syncing has and has not done, as label and value rows.
+            Column {
+                visible: prompt.kind === "status"
+                width: parent.width
+                Item {
+                    width: parent.width; height: T.s(40)
+                    Mono { x: T.s(16); anchors.verticalCenter: parent.verticalCenter; text: "sync"; px: 10; color: T.hintText; font.capitalization: Font.AllUppercase; font.letterSpacing: T.r(10 * 0.16) }
+                    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: T.line; color: T.surface0 }
+                }
+                Repeater {
+                    model: App.promptRows
+                    Item {
+                        required property var modelData
+                        width: parent.width
+                        height: value.implicitHeight + T.s(14)
+                        Mono { x: T.s(16); y: T.s(7); width: T.s(110); text: modelData.k; px: 12; color: T.hintText }
+                        Mono { id: value; x: T.s(136); y: T.s(7); width: parent.width - T.s(152); text: modelData.v; px: 12; color: T.text2; wrapMode: Text.Wrap
+                               font.family: modelData.k === "server" || modelData.k === "file" || modelData.k === "records here" ? T.mono : T.mono }
+                    }
+                }
+                Mono { x: T.s(16); width: parent.width - T.s(32); topPadding: T.s(10); bottomPadding: T.s(14); text: App.promptTitle; px: 11; color: T.hintText; wrapMode: Text.Wrap; lineHeight: 1.5 }
+            }
 
             // Quick add: chips in parser order, then the app's own hint.
             Column {
@@ -145,15 +168,15 @@ Item {
                     anchors.left: parent.left; anchors.leftMargin: T.s(16); anchors.verticalCenter: parent.verticalCenter
                     spacing: T.s(16)
                     Keycap { visible: prompt.kind === "palette" || prompt.kind === "find"; key: "↑↓"; text: "move" }
-                    Keycap { key: "enter"; text: prompt.kind === "add" ? "add" : prompt.kind === "find" ? "open" : prompt.kind === "palette" ? "run" : prompt.kind === "confirm" ? "delete" : "save" }
+                    Keycap { visible: prompt.kind !== "status"; key: "enter"; text: prompt.kind === "add" ? "add" : prompt.kind === "find" ? "open" : prompt.kind === "palette" ? "run" : prompt.kind === "confirm" ? "delete" : "save" }
                     Keycap { visible: prompt.kind === "add"; key: "ctrl k"; text: "keep adding"; fill: App.keepAdding ? T.positive : T.surface0; keyColor: App.keepAdding ? T.onFill(T.positive) : T.text }
-                    Keycap { key: "esc"; text: prompt.kind === "confirm" ? "keep it" : "dismiss" }
+                    Keycap { key: "esc"; text: prompt.kind === "confirm" ? "keep it" : prompt.kind === "status" ? "close" : "dismiss" }
                 }
                 Mono {
                     anchors.right: parent.right; anchors.rightMargin: T.s(16); anchors.verticalCenter: parent.verticalCenter
                     px: 11; color: T.hintText
                     text: prompt.kind === "add" ? (App.addPreview.destination || "") : prompt.kind === "find" ? "tasks, projects and labels at once"
-                        : prompt.kind === "palette" ? "every view is a query — filters live in the same list" : ""
+                        : prompt.kind === "palette" ? "every view is a query — filters live in the same list" : prompt.kind === "status" ? "planner sync status, from a shell" : ""
                 }
             }
         }

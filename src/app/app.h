@@ -13,6 +13,9 @@
 #include "present.h"
 #include "schedule.h"
 #include "store.h"
+#include "sync.h"
+
+#include <QMutex>
 
 #include <QObject>
 #include <QQmlEngine>
@@ -58,6 +61,8 @@ class App : public QObject {
     Q_PROPERTY(QVariantList headerHints READ headerHints NOTIFY changed)
     Q_PROPERTY(QVariantMap status READ status NOTIFY changed)
     Q_PROPERTY(QString saveError READ saveError NOTIFY changed)
+    Q_PROPERTY(QVariantList promptRows READ promptRows NOTIFY changed)
+    Q_PROPERTY(bool syncConfigured READ syncConfigured NOTIFY changed)
 
 public:
     struct Options {
@@ -76,6 +81,12 @@ public:
     // Runs an agent command against the live store, saving immediately so the
     // caller is told the truth. Returns what to print and whether it worked.
     std::pair<QString, bool> agentCommand(const QStringList &args);
+    // `planner sync now|status` from a second launch, answered by the window.
+    std::pair<QString, bool> syncCommand(const QStringList &args);
+    // What syncing has and has not done, as JSON for the CLI and rows for the pane.
+    QJsonObject syncStatusJson() const;
+    // Whether a worker is out talking to the server.
+    bool syncBusy() const { return m_syncing; }
     // The tick, the reminder tick, and the final flush.
     void saveNow();
 
@@ -111,6 +122,12 @@ public:
     QVariantList headerHints() const { return m_headerHints; }
     QVariantMap status() const { return m_status; }
     QString saveError() const { return m_saveError; }
+    QVariantList promptRows() const { return m_promptRows; }
+    bool syncConfigured() const { return m_syncTarget.has_value(); }
+
+    // --- sync
+    Q_INVOKABLE void syncNow();
+    Q_INVOKABLE void showSyncStatus();
 
     // --- navigation
     Q_INVOKABLE void go(const QString &viewId);
@@ -207,8 +224,16 @@ private:
     void fireReminders();
     void notify(const QString &title, const QString &body);
     void readSummonKey();
+    void startSync();
+    void finishSync(const std::optional<planner::sync::Incoming> &incoming, const QString &error);
+    void waitForChanges();
+    void finishWait(bool ok, bool changed, const QDateTime &cursor);
+    void syncAfterEdit();
+    void reportSyncFailure(const QString &message);
+    template <typename F> static void onMainThread(F functor);
 
     static App *s_instance;
+    static QMutex s_instanceMutex;   // workers check the instance is still here
     Palette *m_palette;
     planner::Store m_store;
     planner::LoadOutcome m_loadOutcome;
@@ -219,6 +244,20 @@ private:
     QTimer m_reminderTick;
     QTimer m_toastTimer;
     QDate m_pinnedToday;
+
+    // Sync: where to, what was agreed, and how it has been going.
+    std::optional<std::pair<QString, QString>> m_syncTarget;
+    planner::sync::Snapshot m_syncBase;
+    bool m_syncing = false;
+    bool m_applyingSync = false;
+    int m_syncFailures = 0;
+    QString m_syncError;         // shown once failures have persisted
+    QString m_syncLastFailure;
+    std::optional<QDateTime> m_syncLastPass;
+    std::optional<QDateTime> m_syncCursor;
+    QTimer m_syncTick;
+    QTimer m_syncSoon;
+    QVariantList m_promptRows;
 
     // Per-surface state, everything else is derived.
     QString m_viewId = QStringLiteral("today");

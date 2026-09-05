@@ -22,6 +22,9 @@
 
 namespace planner {
 
+// The instant records predating `updated_at` read as: any real edit beats it.
+QDateTime epoch();
+
 // Identifiers are opaque strings, generated locally and never reused. Each
 // record kind gets its own alias so a signature says which it wants.
 using TaskId = QString;
@@ -191,7 +194,8 @@ struct Task {
     std::optional<QDateTime> completedAt;
     QDateTime addedAt;
     QDateTime updatedAt;
-    int order = 0;
+    // Where it sits in its list: an order key (see order.h), not a position.
+    QString order;
 
     static Task create(const ProjectId &project, const QString &content, const QDateTime &now);
     void touch(const QDateTime &now) { updatedAt = now; }
@@ -219,26 +223,33 @@ ViewStyle viewStyleFromSerial(const QString &text);
 QString sortBySerial(SortBy sort);
 SortBy sortByFromSerial(const QString &text);
 
+// A section is a record of its own with a `project_id`, so two machines each
+// adding one to the same project are two records rather than two edits to one.
 struct Section {
     SectionId id;
+    ProjectId projectId;
     QString name;
     bool collapsed = false;
-    int order = 0;
-    static Section create(const QString &name);
+    QString order;
+    QDateTime updatedAt = epoch();
+    static Section create(const ProjectId &project, const QString &name);
+    void touch(const QDateTime &now) { updatedAt = now.toUTC(); }
     QJsonObject toJson() const;
     static Section fromJson(const QJsonObject &json);
+    // A section as schema v1 wrote it: nested in its project, no project_id.
+    static Section fromLegacyJson(const QJsonObject &json, const ProjectId &project);
     bool operator==(const Section &other) const;
 };
 
-// Sections are stored inside their project: a section has no meaning apart
-// from it, and deleting a project must take them with it.
 struct Project {
     ProjectId id;
     QString name;
     Color color = Color::Blue;
     QString description;
     std::optional<ProjectId> parentId;
-    QList<Section> sections;
+    // Sections a v1 file nested here, lifted into the store's own list on open
+    // and never written back.
+    QList<Section> legacySections;
     bool isFavorite = false;
     bool isArchived = false;
     bool collapsed = false;
@@ -246,16 +257,12 @@ struct Project {
     SortBy sortBy = SortBy::Manual;
     bool showCompleted = false;
     int order = 0;
+    QDateTime updatedAt = epoch();
 
     static Project create(const QString &name, Color color);
     static Project inbox();
     bool isInbox() const { return id == inboxId(); }
-    const Section *section(const SectionId &id) const;
-    Section *sectionMut(const SectionId &id);
-    SectionId addSection(Section section);
-    std::optional<Section> removeSection(const SectionId &id);
-    void restoreSection(const Section &section) { sections.append(section); }
-    QList<const Section *> sectionsOrdered() const;
+    void touch(const QDateTime &now) { updatedAt = now.toUTC(); }
 
     QJsonObject toJson() const;
     static Project fromJson(const QJsonObject &json);
@@ -268,7 +275,9 @@ struct Label {
     Color color = Color::Blue;
     bool isFavorite = false;
     int order = 0;
+    QDateTime updatedAt = epoch();
     static Label create(const QString &name, Color color);
+    void touch(const QDateTime &now) { updatedAt = now.toUTC(); }
     bool matchesName(const QString &name) const { return this->name.compare(name, Qt::CaseInsensitive) == 0; }
     QJsonObject toJson() const;
     static Label fromJson(const QJsonObject &json);
@@ -283,11 +292,32 @@ struct SavedFilter {
     QString query;
     Color color = Color::Blue;
     int order = 0;
+    QDateTime updatedAt = epoch();
     static SavedFilter create(const QString &name, const QString &query, Color color);
+    void touch(const QDateTime &now) { updatedAt = now.toUTC(); }
     QJsonObject toJson() const;
     static SavedFilter fromJson(const QJsonObject &json);
     bool operator==(const SavedFilter &other) const;
 };
+
+// --- tombstones ----------------------------------------------------------------
+
+// Which list a record came from. Sync applies deletions per kind.
+enum class RecordKind { Task, Project, Section, Label, Filter };
+QString recordKindSerial(RecordKind kind);   // task, project, section, label, filter
+std::optional<RecordKind> recordKindFromSerial(const QString &text);
+
+// A record that was deleted, and when. It carries the id and the moment and
+// nothing else; the contents are the undo toast's problem. Markers older than
+// ninety days are dropped at load.
+struct Tombstone {
+    RecordKind kind = RecordKind::Task;
+    QString id;
+    QDateTime deletedAt;
+    QJsonObject toJson() const;
+    static std::optional<Tombstone> fromJson(const QJsonObject &json);
+};
+constexpr int kTombstoneRetentionDays = 90;
 
 // --- JSON helpers shared by the records ---------------------------------------
 

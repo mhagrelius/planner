@@ -1,0 +1,16 @@
+# The build context is the workspace root, because planner-server depends on
+# planner-core by path and a narrower context cannot see it. That makes this
+# file load-bearing before the first build rather than after: `target/` alone
+# is gigabytes, and it is uploaded before any instruction runs.
+#
+# The Containerfile then copies an explicit list rather than the whole context,
+# so this only has to stop the large and the secret.
+target/
+.git/
+.flatpak-build/
+dist/
+
+# These reach the container through the environment, never through a layer,
+# where they would survive in the image whatever the running process does.
+server/.env
+packaging/.env

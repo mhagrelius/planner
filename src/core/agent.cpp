@@ -301,8 +301,7 @@ QJsonObject taskView(const Store &store, const Task &task, const QDate &today, b
     // app produces. Saying so is more use than an id.
     json.insert(QStringLiteral("project"), project ? project->name : QStringLiteral("(unknown project)"));
     if (task.sectionId) {
-        const auto found = store.section(*task.sectionId);
-        if (found.second) json.insert(QStringLiteral("section"), found.second->name);
+        if (const Section *section = store.section(*task.sectionId)) json.insert(QStringLiteral("section"), section->name);
     }
     if (task.due) {
         json.insert(QStringLiteral("due"), duePhrase(*task.due));
@@ -341,7 +340,7 @@ static QJsonObject projectView(const Store &store, const Project &project) {
         if (const Project *parent = store.project(*project.parentId)) json.insert(QStringLiteral("parent"), parent->name);
     }
     QJsonArray sections;
-    for (const Section *section : project.sectionsOrdered()) sections.append(section->name);
+    for (const Section *section : store.sectionsIn(project.id)) sections.append(section->name);
     if (!sections.isEmpty()) json.insert(QStringLiteral("sections"), sections);
     const auto [done, total] = store.progress(project.id);
     json.insert(QStringLiteral("open"), total - done);
@@ -420,7 +419,7 @@ static std::optional<SectionId> resolveSection(const Store &store, const Project
         if (error) *error = {QStringLiteral("not-found"), QStringLiteral("There is no project `%1` to look for `%2` in.").arg(projectId, wanted), {}, {}};
         return std::nullopt;
     }
-    const auto sections = owner->sectionsOrdered();
+    const auto sections = store.sectionsIn(projectId);
     for (const Section *section : sections)
         if (section->name.compare(wanted, Qt::CaseInsensitive) == 0) return section->id;
     for (const Section *section : sections)
@@ -637,7 +636,7 @@ static Result update(Store &store, const QString &reference, const QList<std::pa
             if (!pinned) return fail(QStringLiteral("bad-value"), QStringLiteral("`pinned=%1` is not true or false.").arg(value));
             if (task->pinned != *pinned) { task->pinned = *pinned; task->touch(now); applied << QStringLiteral("pinned → %1").arg(*pinned ? QStringLiteral("true") : QStringLiteral("false")); }
         } else if (key == u"add-label" || key == u"label") {
-            const LabelId label = store.labelForName(value);
+            const LabelId label = store.labelForName(value, now);
             task = store.taskMut(id);
             if (!task->hasLabel(label)) { task->addLabel(label); task->touch(now); applied << QStringLiteral("label + %1").arg(value); }
         } else if (key == u"remove-label" || key == u"unlabel") {
@@ -666,7 +665,7 @@ static Result update(Store &store, const QString &reference, const QList<std::pa
         if (project != currentProject || target != currentSection) {
             if (!store.moveTask(id, project, target, 1 << 30, now)) return fail(QStringLiteral("refused"), QStringLiteral("That task could not be moved there."));
             if (destination) applied << QStringLiteral("project → %1").arg(store.project(*destination)->name);
-            if (target) applied << QStringLiteral("section → %1").arg(store.section(*target).second->name);
+            if (target) applied << QStringLiteral("section → %1").arg(store.section(*target)->name);
             else if (currentSection) applied << QStringLiteral("section → none");
         }
     }
@@ -841,7 +840,7 @@ Result run(Store &store, const QStringList &args, const QDateTime &now, const QD
         const auto id = resolveTask(store, reference, &error);
         if (!id) return failWith(error);
         QJsonArray removed;
-        const QList<Task> gone = store.removeTask(*id);
+        const QList<Task> gone = store.removeTask(*id, now);
         for (const Task &task : gone) removed.append(QJsonObject{{QStringLiteral("id"), task.id}, {QStringLiteral("content"), task.content}});
         return respond(QStringLiteral("deleted"), {{QStringLiteral("count"), static_cast<int>(gone.size())}, {QStringLiteral("removed"), removed}}, true);
     }
@@ -864,7 +863,7 @@ Result run(Store &store, const QStringList &args, const QDateTime &now, const QD
         }
         Project project = Project::create(name.trimmed(), store.nextProjectColor());
         project.parentId = parent;
-        const ProjectId id = store.addProject(project);
+        const ProjectId id = store.addProject(project, now);
         return respond(QStringLiteral("project-added"), {{QStringLiteral("project"), projectView(store, *store.project(id))}}, true);
     }
     if (*verb == u"rename-project") {
@@ -875,6 +874,7 @@ Result run(Store &store, const QStringList &args, const QDateTime &now, const QD
         if (!id) return failWith(error);
         if (*id == inboxId()) return fail(QStringLiteral("refused"), QStringLiteral("The Inbox cannot be renamed. It is where anything without a project goes, and every other part of the app names it."));
         store.projectMut(*id)->name = name.trimmed();
+        store.projectMut(*id)->touch(now);
         return respond(QStringLiteral("project-renamed"), {{QStringLiteral("project"), projectView(store, *store.project(*id))}}, true);
     }
     if (*verb == u"remove-project") {
@@ -883,7 +883,7 @@ Result run(Store &store, const QStringList &args, const QDateTime &now, const QD
         const auto id = resolveProject(store, reference, &error);
         if (!id) return failWith(error);
         const QString name = store.project(*id)->name;
-        const auto removed = store.removeProject(*id);
+        const auto removed = store.removeProject(*id, now);
         if (!removed) return fail(QStringLiteral("refused"), QStringLiteral("The Inbox cannot be deleted. It is where a task with no project of its own lives."),
                                   QStringLiteral("Delete the tasks in it instead, or move them somewhere else."));
         return respond(QStringLiteral("project-removed"), {{QStringLiteral("name"), name}, {QStringLiteral("projects"), static_cast<int>(removed->projects.size())},

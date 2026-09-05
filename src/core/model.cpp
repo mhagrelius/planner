@@ -1,7 +1,10 @@
 #include "model.h"
 
+#include "order.h"
+
 #include <QJsonArray>
 #include <QLocale>
+#include <QTimeZone>
 
 #include <algorithm>
 #include <atomic>
@@ -21,6 +24,8 @@ QString newId() {
 }
 
 ProjectId inboxId() { return QStringLiteral("inbox"); }
+
+QDateTime epoch() { return QDateTime::fromSecsSinceEpoch(0, QTimeZone::utc()); }
 
 // --- weekdays ----------------------------------------------------------------
 
@@ -410,6 +415,7 @@ Task Task::create(const ProjectId &project, const QString &content, const QDateT
     task.projectId = project;
     task.addedAt = now.toUTC();
     task.updatedAt = now.toUTC();
+    task.order = order::start();
     return task;
 }
 
@@ -470,6 +476,14 @@ QJsonObject Task::toJson() const {
     return json;
 }
 
+// Accepts what v2 writes and what v1 wrote: a number is a v1 position, placed
+// so the list keeps its order and new keys land after it.
+static QString orderFromJson(const QJsonValue &value) {
+    if (value.isString()) return value.toString();
+    if (value.isDouble()) return order::fromLegacyPosition(static_cast<qint64>(value.toDouble()));
+    return order::start();
+}
+
 Task Task::fromJson(const QJsonObject &json) {
     Task task;
     task.id = json.value(QStringLiteral("id")).toString();
@@ -490,7 +504,7 @@ Task Task::fromJson(const QJsonObject &json) {
     if (json.contains(QStringLiteral("completed_at"))) task.completedAt = instantFromSerial(json.value(QStringLiteral("completed_at")).toString());
     task.addedAt = instantFromSerial(json.value(QStringLiteral("added_at")).toString()).value_or(QDateTime());
     task.updatedAt = instantFromSerial(json.value(QStringLiteral("updated_at")).toString()).value_or(task.addedAt);
-    task.order = json.value(QStringLiteral("order")).toInt(0);
+    task.order = orderFromJson(json.value(QStringLiteral("order")));
     return task;
 }
 
@@ -526,15 +540,18 @@ SortBy sortByFromSerial(const QString &text) {
     return SortBy::Manual;
 }
 
-Section Section::create(const QString &name) {
+Section Section::create(const ProjectId &project, const QString &name) {
     Section section;
     section.id = newId();
+    section.projectId = project;
     section.name = name;
+    section.order = order::start();
     return section;
 }
 
 QJsonObject Section::toJson() const {
-    QJsonObject json{{QStringLiteral("id"), id}, {QStringLiteral("name"), name}, {QStringLiteral("order"), order}};
+    QJsonObject json{{QStringLiteral("id"), id}, {QStringLiteral("project_id"), projectId}, {QStringLiteral("name"), name},
+                     {QStringLiteral("order"), order}, {QStringLiteral("updated_at"), instantSerial(updatedAt)}};
     if (collapsed) json.insert(QStringLiteral("collapsed"), true);
     return json;
 }
@@ -542,14 +559,26 @@ QJsonObject Section::toJson() const {
 Section Section::fromJson(const QJsonObject &json) {
     Section section;
     section.id = json.value(QStringLiteral("id")).toString();
+    section.projectId = json.value(QStringLiteral("project_id")).toString();
     section.name = json.value(QStringLiteral("name")).toString();
     section.collapsed = json.value(QStringLiteral("collapsed")).toBool(false);
-    section.order = json.value(QStringLiteral("order")).toInt(0);
+    section.order = orderFromJson(json.value(QStringLiteral("order")));
+    section.updatedAt = instantFromSerial(json.value(QStringLiteral("updated_at")).toString()).value_or(epoch());
+    return section;
+}
+
+Section Section::fromLegacyJson(const QJsonObject &json, const ProjectId &project) {
+    Section section = fromJson(json);
+    section.projectId = project;
+    // A v1 file predates the field: untouched since the epoch, so any real edit
+    // anywhere beats it.
+    section.updatedAt = epoch();
     return section;
 }
 
 bool Section::operator==(const Section &other) const {
-    return id == other.id && name == other.name && collapsed == other.collapsed && order == other.order;
+    return id == other.id && projectId == other.projectId && name == other.name && collapsed == other.collapsed
+        && order == other.order && updatedAt == other.updatedAt;
 }
 
 Project Project::create(const QString &name, Color color) {
@@ -567,44 +596,6 @@ Project Project::inbox() {
     return project;
 }
 
-const Section *Project::section(const SectionId &id) const {
-    for (const Section &section : sections)
-        if (section.id == id) return &section;
-    return nullptr;
-}
-
-Section *Project::sectionMut(const SectionId &id) {
-    for (Section &section : sections)
-        if (section.id == id) return &section;
-    return nullptr;
-}
-
-SectionId Project::addSection(Section section) {
-    int max = -1;
-    for (const Section &existing : sections) max = std::max(max, existing.order);
-    section.order = max + 1;
-    sections.append(section);
-    return section.id;
-}
-
-std::optional<Section> Project::removeSection(const SectionId &id) {
-    for (int i = 0; i < sections.size(); ++i) {
-        if (sections.at(i).id == id) {
-            Section removed = sections.at(i);
-            sections.removeAt(i);
-            return removed;
-        }
-    }
-    return std::nullopt;
-}
-
-QList<const Section *> Project::sectionsOrdered() const {
-    QList<const Section *> ordered;
-    for (const Section &section : sections) ordered.append(&section);
-    std::stable_sort(ordered.begin(), ordered.end(), [](const Section *a, const Section *b) { return a->order < b->order; });
-    return ordered;
-}
-
 QJsonObject Project::toJson() const {
     QJsonObject json;
     json.insert(QStringLiteral("id"), id);
@@ -612,11 +603,6 @@ QJsonObject Project::toJson() const {
     json.insert(QStringLiteral("color"), colorId(color));
     if (!description.isEmpty()) json.insert(QStringLiteral("description"), description);
     if (parentId) json.insert(QStringLiteral("parent_id"), *parentId);
-    if (!sections.isEmpty()) {
-        QJsonArray array;
-        for (const Section &section : sections) array.append(section.toJson());
-        json.insert(QStringLiteral("sections"), array);
-    }
     if (isFavorite) json.insert(QStringLiteral("is_favorite"), true);
     if (isArchived) json.insert(QStringLiteral("is_archived"), true);
     if (collapsed) json.insert(QStringLiteral("collapsed"), true);
@@ -624,6 +610,7 @@ QJsonObject Project::toJson() const {
     json.insert(QStringLiteral("sort_by"), sortBySerial(sortBy));
     if (showCompleted) json.insert(QStringLiteral("show_completed"), true);
     json.insert(QStringLiteral("order"), order);
+    json.insert(QStringLiteral("updated_at"), instantSerial(updatedAt));
     return json;
 }
 
@@ -635,7 +622,8 @@ Project Project::fromJson(const QJsonObject &json) {
     project.description = json.value(QStringLiteral("description")).toString();
     if (json.contains(QStringLiteral("parent_id")) && !json.value(QStringLiteral("parent_id")).isNull())
         project.parentId = json.value(QStringLiteral("parent_id")).toString();
-    for (const QJsonValue &value : json.value(QStringLiteral("sections")).toArray()) project.sections.append(Section::fromJson(value.toObject()));
+    for (const QJsonValue &value : json.value(QStringLiteral("sections")).toArray())
+        project.legacySections.append(Section::fromLegacyJson(value.toObject(), project.id));
     project.isFavorite = json.value(QStringLiteral("is_favorite")).toBool(false);
     project.isArchived = json.value(QStringLiteral("is_archived")).toBool(false);
     project.collapsed = json.value(QStringLiteral("collapsed")).toBool(false);
@@ -643,14 +631,15 @@ Project Project::fromJson(const QJsonObject &json) {
     project.sortBy = sortByFromSerial(json.value(QStringLiteral("sort_by")).toString());
     project.showCompleted = json.value(QStringLiteral("show_completed")).toBool(false);
     project.order = json.value(QStringLiteral("order")).toInt(0);
+    project.updatedAt = instantFromSerial(json.value(QStringLiteral("updated_at")).toString()).value_or(epoch());
     return project;
 }
 
 bool Project::operator==(const Project &other) const {
     return id == other.id && name == other.name && color == other.color && description == other.description
-        && parentId == other.parentId && sections == other.sections && isFavorite == other.isFavorite
+        && parentId == other.parentId && isFavorite == other.isFavorite
         && isArchived == other.isArchived && collapsed == other.collapsed && viewStyle == other.viewStyle
-        && sortBy == other.sortBy && showCompleted == other.showCompleted && order == other.order;
+        && sortBy == other.sortBy && showCompleted == other.showCompleted && order == other.order && updatedAt == other.updatedAt;
 }
 
 Label Label::create(const QString &name, Color color) {
@@ -662,7 +651,8 @@ Label Label::create(const QString &name, Color color) {
 }
 
 QJsonObject Label::toJson() const {
-    QJsonObject json{{QStringLiteral("id"), id}, {QStringLiteral("name"), name}, {QStringLiteral("color"), colorId(color)}, {QStringLiteral("order"), order}};
+    QJsonObject json{{QStringLiteral("id"), id}, {QStringLiteral("name"), name}, {QStringLiteral("color"), colorId(color)}, {QStringLiteral("order"), order},
+                     {QStringLiteral("updated_at"), instantSerial(updatedAt)}};
     if (isFavorite) json.insert(QStringLiteral("is_favorite"), true);
     return json;
 }
@@ -674,11 +664,12 @@ Label Label::fromJson(const QJsonObject &json) {
     label.color = colorFromId(json.value(QStringLiteral("color")).toString()).value_or(Color::Blue);
     label.isFavorite = json.value(QStringLiteral("is_favorite")).toBool(false);
     label.order = json.value(QStringLiteral("order")).toInt(0);
+    label.updatedAt = instantFromSerial(json.value(QStringLiteral("updated_at")).toString()).value_or(epoch());
     return label;
 }
 
 bool Label::operator==(const Label &other) const {
-    return id == other.id && name == other.name && color == other.color && isFavorite == other.isFavorite && order == other.order;
+    return id == other.id && name == other.name && color == other.color && isFavorite == other.isFavorite && order == other.order && updatedAt == other.updatedAt;
 }
 
 SavedFilter SavedFilter::create(const QString &name, const QString &query, Color color) {
@@ -692,7 +683,7 @@ SavedFilter SavedFilter::create(const QString &name, const QString &query, Color
 
 QJsonObject SavedFilter::toJson() const {
     return QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("name"), name}, {QStringLiteral("query"), query},
-                       {QStringLiteral("color"), colorId(color)}, {QStringLiteral("order"), order}};
+                       {QStringLiteral("color"), colorId(color)}, {QStringLiteral("order"), order}, {QStringLiteral("updated_at"), instantSerial(updatedAt)}};
 }
 
 SavedFilter SavedFilter::fromJson(const QJsonObject &json) {
@@ -702,11 +693,36 @@ SavedFilter SavedFilter::fromJson(const QJsonObject &json) {
     filter.query = json.value(QStringLiteral("query")).toString();
     filter.color = colorFromId(json.value(QStringLiteral("color")).toString()).value_or(Color::Blue);
     filter.order = json.value(QStringLiteral("order")).toInt(0);
+    filter.updatedAt = instantFromSerial(json.value(QStringLiteral("updated_at")).toString()).value_or(epoch());
     return filter;
 }
 
 bool SavedFilter::operator==(const SavedFilter &other) const {
-    return id == other.id && name == other.name && query == other.query && color == other.color && order == other.order;
+    return id == other.id && name == other.name && query == other.query && color == other.color && order == other.order && updatedAt == other.updatedAt;
+}
+
+// --- tombstones --------------------------------------------------------------
+
+QString recordKindSerial(RecordKind kind) {
+    static const char *names[] = {"task", "project", "section", "label", "filter"};
+    return QString::fromLatin1(names[static_cast<int>(kind)]);
+}
+
+std::optional<RecordKind> recordKindFromSerial(const QString &text) {
+    for (RecordKind kind : {RecordKind::Task, RecordKind::Project, RecordKind::Section, RecordKind::Label, RecordKind::Filter})
+        if (recordKindSerial(kind) == text) return kind;
+    return std::nullopt;
+}
+
+QJsonObject Tombstone::toJson() const {
+    return QJsonObject{{QStringLiteral("kind"), recordKindSerial(kind)}, {QStringLiteral("id"), id}, {QStringLiteral("deleted_at"), instantSerial(deletedAt)}};
+}
+
+std::optional<Tombstone> Tombstone::fromJson(const QJsonObject &json) {
+    const auto kind = recordKindFromSerial(json.value(QStringLiteral("kind")).toString());
+    const auto at = instantFromSerial(json.value(QStringLiteral("deleted_at")).toString());
+    if (!kind || !at) return std::nullopt;
+    return Tombstone{*kind, json.value(QStringLiteral("id")).toString(), *at};
 }
 
 // --- serial forms ------------------------------------------------------------

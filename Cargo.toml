@@ -1,0 +1,7 @@
+# The Rust half that stays: `planner-core` holds the record schema and the sync
+# rules `planner-server` links, and the server is what runs on the NAS. The
+# desktop app on this branch is the C++/Qt Quick one in src/; its core mirrors
+# planner-core's format and is tested against it.
+[workspace]
+members = ["core", "server"]
+resolver = "2"

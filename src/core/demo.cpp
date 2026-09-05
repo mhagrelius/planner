@@ -10,11 +10,11 @@ static TaskId add(Store &store, const char *line, const QDate &today, const QDat
 }
 
 void seedDemo(Store &store, const QDate &today, const QDateTime &now) {
-    const ProjectId work = store.addProject(Project::create(QStringLiteral("Work"), Color::Blue));
+    const ProjectId work = store.addProject(Project::create(QStringLiteral("Work"), Color::Blue), now);
     Project admin = Project::create(QStringLiteral("Admin"), Color::Teal);
     admin.parentId = work;
-    store.addProject(admin);
-    store.addProject(Project::create(QStringLiteral("Home"), Color::Green));
+    store.addProject(admin, now);
+    store.addProject(Project::create(QStringLiteral("Home"), Color::Green), now);
 
     for (const char *line : {"Email Sam about the lease @email p1 today 9am", "Renew the parking permit p2 today", "Water the plants every! 10 days",
                              "Book the dentist @phone", "Pay the electricity bill p3 yesterday", "Weekly review every monday"})
@@ -37,8 +37,8 @@ void seedDemo(Store &store, const QDate &today, const QDateTime &now) {
     store.completeTask(done, now, today);
 
     // A project with sections, so the board has columns worth looking at.
-    const SectionId doing = store.projectMut(work)->addSection(Section::create(QStringLiteral("In progress")));
-    const SectionId blocked = store.projectMut(work)->addSection(Section::create(QStringLiteral("Blocked")));
+    const SectionId doing = store.addSection(Section::create(work, QStringLiteral("In progress")), now);
+    const SectionId blocked = store.addSection(Section::create(work, QStringLiteral("Blocked")), now);
     const struct { const char *line; std::optional<SectionId> section; } placed[] = {
         {"Draft the Q3 report p1 tomorrow", doing}, {"Review the contract @legal", doing}, {"Chase the supplier p2", blocked}, {"Tidy the shared drive", std::nullopt}};
     for (const auto &entry : placed) {

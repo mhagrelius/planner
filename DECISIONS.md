@@ -18,6 +18,28 @@ open, this is what happened and why.
 - **Ids are `QString` aliases**, not the Rust newtypes. The compiler no longer
   catches a project id passed for a task id; signatures say which they take.
 
+## Sync
+
+- **Schema v2 and the sync design come from the `server-sync` branch** (now
+  `main`), ported to C++ as written: sections as records, order keys,
+  tombstones with 90-day retention, three-snapshot planning, last-writer-wins
+  per record, deletion never beats an edit. `sync-base.json` uses the Rust
+  client's shape (`[[{kind,id},{Live|Deleted: at}]]`), so either client can
+  take over a machine's base.
+- **The Rust `core/` and `server/` stay in the repo** so the container can be
+  built from this branch; only the GTK shell (`src/` on the old workspace) was
+  dropped. The C++ core mirrors planner-core's format and is tested to read
+  what it writes.
+- **The worker does network and nothing else.** A pass gathers on a
+  `std::thread` over a blocking `QTcpSocket` and applies on the main thread
+  through the same `mutate` path every edit uses; the save tick does the write.
+- **Failures are reported after three in a row**, in the status line, below a
+  save error. A failed long poll says nothing; the three-minute tick is the
+  backstop.
+- **`--demo` never syncs**, whatever the config says.
+- `planner sync now|status` is a second CLI beside `planner agent`; it is
+  answered by the running window or, with none, runs a pass against the file.
+
 ## Layout and chrome
 
 - The window is a normal Hyprland client: no titlebar, border or shadow of its own.

@@ -124,7 +124,7 @@ private slots:
     }
     void labelsMatchByNameRegardlessOfCase() {
         Store s = store();
-        const LabelId label = s.labelForName("Errand");
+        const LabelId label = s.labelForName("Errand", now());
         const TaskId id = task(s, "Post office");
         task(s, "Something else");
         s.taskMut(id)->addLabel(label);
@@ -134,16 +134,16 @@ private slots:
     }
     void projectsAndSections() {
         Store s = store();
-        const ProjectId parent = s.addProject(Project::create("Work", Color::Blue));
+        const ProjectId parent = s.addProject(Project::create("Work", Color::Blue), now());
         Project child = Project::create("Admin", Color::Teal);
         child.parentId = parent;
-        const ProjectId childId = s.addProject(child);
+        const ProjectId childId = s.addProject(child, now());
         s.addTask(Task::create(parent, "In Work", now()));
         s.addTask(Task::create(childId, "In Admin", now()));
         QCOMPARE(matching(s, "#Work"), QStringList{"In Work"});
         QCOMPARE(matching(s, "##Work"), (QStringList{"In Admin", "In Work"}));
         QVERIFY(matching(s, "#Nonexistent").isEmpty());
-        const SectionId section = s.projectMut(parent)->addSection(Section::create("Doing"));
+        const SectionId section = s.addSection(Section::create(parent, "Doing"), now());
         Task inSection = Task::create(parent, "In progress", now());
         inSection.sectionId = section;
         s.addTask(inSection);
@@ -159,7 +159,7 @@ private slots:
         Store t = store();
         const TaskId a = task(t, "Urgent errand");
         const TaskId b = task(t, "Urgent desk job");
-        const LabelId label = t.labelForName("errand");
+        const LabelId label = t.labelForName("errand", now());
         t.taskMut(a)->priority = Priority::P1;
         t.taskMut(a)->addLabel(label);
         t.taskMut(b)->priority = Priority::P1;

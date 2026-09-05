@@ -20,6 +20,9 @@ qt_add_library(plannercore STATIC
     src/core/present.cpp
     src/core/agent.cpp
     src/core/demo.cpp
+    src/core/order.cpp
+    src/core/sync.cpp
+    src/core/config.cpp
 )
 target_include_directories(plannercore PUBLIC src/core)
 target_link_libraries(plannercore PUBLIC Qt6::Core)
@@ -34,6 +37,7 @@ qt_add_executable(planner
     src/app/app.cpp
     src/app/icons.cpp
     src/app/single.cpp
+    src/app/remote.cpp
 )
 
 set_source_files_properties(src/app/qml/T.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
@@ -63,7 +67,7 @@ endif()
 
 # ---- tests ------------------------------------------------------------------
 enable_testing()
-foreach(t dates recurrence quickadd query store search schedule present agent)
+foreach(t dates recurrence quickadd query store search schedule present agent order sync)
     qt_add_executable(test_${t} tests/test_${t}.cpp)
     target_link_libraries(test_${t} PRIVATE plannercore Qt6::Test)
     add_test(NAME ${t} COMMAND test_${t})

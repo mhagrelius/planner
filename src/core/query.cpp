@@ -88,8 +88,8 @@ static bool termMatches(const Term &term, const Task &task, const Store &store, 
     }
     case Term::SectionIs: {
         if (!task.sectionId) return false;
-        const auto found = store.section(*task.sectionId);
-        return found.second && found.second->name.compare(term.name, Qt::CaseInsensitive) == 0;
+        const Section *found = store.section(*task.sectionId);
+        return found && found->name.compare(term.name, Qt::CaseInsensitive) == 0;
     }
     case Term::Search: {
         const QString needle = term.name.toLower();

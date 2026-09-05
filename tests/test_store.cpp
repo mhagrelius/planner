@@ -32,7 +32,7 @@ private slots:
             store.taskMut(id)->reminders.append(Reminder::beforeDue(30));
             store.taskMut(id)->deadline = d(2026, 8, 3);
             store.taskMut(id)->priority = Priority::P1;
-            store.taskMut(id)->labels.append(store.labelForName("errand"));
+            store.taskMut(id)->labels.append(store.labelForName("errand", instant(2026, 7, 30)));
             QVERIFY(!store.save());
         }
         LoadOutcome outcome;
@@ -78,7 +78,14 @@ private slots:
         QVERIFY(t->pinned);
         QCOMPARE(t->addedAt, QDateTime(d(2026, 7, 1), QTime(12, 0, 0, 123), QTimeZone::utc()));
         QCOMPARE(store.project("w1")->viewStyle, ViewStyle::Board);
-        QCOMPARE(store.project("w1")->sections[0].name, "Doing");
+        QCOMPARE(store.sectionsIn("w1").size(), 1);
+        QCOMPARE(store.sectionsIn("w1")[0]->name, "Doing");
+        QCOMPARE(store.sectionsIn("w1")[0]->projectId, "w1");
+        // A v1 position becomes a key that keeps its place, and the file is written as v2.
+        QVERIFY(!t->order.isEmpty());
+        QCOMPARE(store.toJson().value("version").toInt(), 2);
+        QVERIFY(store.toJson().contains("sections"));
+        QVERIFY(!store.toJson().value("projects").toArray()[1].toObject().contains("sections"));
         // And writes back the same spellings.
         const QJsonObject json = t->toJson();
         QCOMPARE(json.value("priority").toString(), "P2");
@@ -125,13 +132,13 @@ private slots:
     void deletingAProjectTakesItsSubprojectsAndTheirTasks() {
         QTemporaryDir dir;
         Store store = Store::openAt(dir.path() + "/planner.json");
-        const ProjectId parent = store.addProject(Project::create("Work", Color::Blue));
+        const ProjectId parent = store.addProject(Project::create("Work", Color::Blue), instant(2026, 7, 30));
         Project child = Project::create("Admin", Color::Teal);
         child.parentId = parent;
-        const ProjectId childId = store.addProject(child);
+        const ProjectId childId = store.addProject(child, instant(2026, 7, 30));
         store.addTask(Task::create(childId, "File the thing", instant(2026, 7, 30)));
         const TaskId survivor = task(store, "Untouched inbox task");
-        const auto removed = store.removeProject(parent);
+        const auto removed = store.removeProject(parent, instant(2026, 7, 30));
         QVERIFY(removed);
         QCOMPARE(removed->projects.size(), 2);
         QCOMPARE(removed->tasks.size(), 1);
@@ -139,17 +146,17 @@ private slots:
         QVERIFY(store.task(survivor));
         store.restoreProject(*removed);
         QVERIFY(store.project(childId));
-        QVERIFY(!store.removeProject(inboxId()));
+        QVERIFY(!store.removeProject(inboxId(), instant(2026, 7, 30)));
         store.projectMut(parent)->parentId = childId;   // a cycle
         QCOMPARE(store.projectAndDescendants(parent).size(), 2);
     }
     void sections() {
         QTemporaryDir dir;
         Store store = Store::openAt(dir.path() + "/planner.json");
-        const ProjectId work = store.addProject(Project::create("Work", Color::Blue));
-        const ProjectId home = store.addProject(Project::create("Home", Color::Teal));
-        const SectionId first = store.projectMut(work)->addSection(Section::create("Doing"));
-        const SectionId second = store.projectMut(work)->addSection(Section::create("Done"));
+        const ProjectId work = store.addProject(Project::create("Work", Color::Blue), instant(2026, 7, 30));
+        const ProjectId home = store.addProject(Project::create("Home", Color::Teal), instant(2026, 7, 30));
+        const SectionId first = store.addSection(Section::create(work, "Doing"), instant(2026, 7, 30));
+        const SectionId second = store.addSection(Section::create(work, "Done"), instant(2026, 7, 30));
         Task t = Task::create(work, "In a column", instant(2026, 7, 30));
         t.sectionId = first;
         const TaskId taskId = store.addTask(t);
@@ -159,7 +166,7 @@ private slots:
         QCOMPARE(store.task(taskId)->updatedAt, instant(2026, 7, 31));
         store.restoreSection(*removed, instant(2026, 8, 1));
         QCOMPARE(store.task(taskId)->sectionId, first);
-        const auto ordered = store.project(work)->sectionsOrdered();
+        const auto ordered = store.sectionsIn(work);
         QCOMPARE(ordered[0]->name, "Doing");
         QCOMPARE(ordered[1]->id, second);
         // A task that moved project is not dragged back by an undo.
@@ -168,14 +175,19 @@ private slots:
         store.restoreSection(*again, instant(2026, 8, 1));
         QCOMPARE(store.task(taskId)->projectId, home);
         QVERIFY(!store.task(taskId)->sectionId);
-        QVERIFY(store.renameSection(second, "Finished"));
-        QCOMPARE(store.section(second).second->name, "Finished");
+        QVERIFY(store.renameSection(second, "Finished", instant(2026, 7, 30)));
+        QCOMPARE(store.section(second)->name, "Finished");
+        // A deleted section leaves a marker; an undo clears it.
+        const auto third = store.removeSection(second, instant(2026, 8, 2));
+        QVERIFY(third && store.isDeleted(RecordKind::Section, second));
+        store.restoreSection(*third, instant(2026, 8, 2));
+        QVERIFY(!store.isDeleted(RecordKind::Section, second));
     }
     void labels() {
         QTemporaryDir dir;
         Store store = Store::openAt(dir.path() + "/planner.json");
-        const LabelId label = store.labelForName("Errand");
-        QCOMPARE(store.labelForName("errand"), label);
+        const LabelId label = store.labelForName("Errand", instant(2026, 7, 30));
+        QCOMPARE(store.labelForName("errand", instant(2026, 7, 30)), label);
         QCOMPARE(store.labels().size(), 1);
         const TaskId a = task(store, "One");
         const TaskId b = task(store, "Two");
@@ -201,7 +213,7 @@ private slots:
         QVERIFY(store.task(parent)->checked && store.task(child)->checked && store.task(grandchild)->checked);
         store.uncompleteTask(grandchild, instant(2026, 7, 31));
         QVERIFY(!store.task(child)->checked && !store.task(parent)->checked);
-        const auto removed = store.removeTask(parent);
+        const auto removed = store.removeTask(parent, instant(2026, 7, 30));
         QCOMPARE(removed.size(), 3);
         QVERIFY(store.tasks().isEmpty());
         store.restoreTasks(removed);
@@ -222,35 +234,92 @@ private slots:
     void orderingAndMoving() {
         QTemporaryDir dir;
         Store store = Store::openAt(dir.path() + "/planner.json");
-        const ProjectId work = store.addProject(Project::create("Work", Color::Blue));
+        const ProjectId work = store.addProject(Project::create("Work", Color::Blue), instant(2026, 7, 30));
         const TaskId first = task(store, "Inbox one");
         const TaskId second = task(store, "Inbox two");
         const TaskId elsewhere = store.addTask(Task::create(work, "Work one", instant(2026, 7, 30)));
-        QCOMPARE(store.task(first)->order, 0);
-        QCOMPARE(store.task(second)->order, 1);
-        QCOMPARE(store.task(elsewhere)->order, 0);
-        // Move the second above the first.
+        auto ids = [&](const ProjectId &p, const std::optional<SectionId> &s) { QStringList out; for (const Task *t : store.tasksIn(p, s)) out << t->id; return out; };
+        QCOMPARE(ids(inboxId(), std::nullopt), (QStringList{first, second}));
+        QCOMPARE(ids(work, std::nullopt), QStringList{elsewhere});
+        // Move the second above the first: one record changes.
+        const QString firstKey = store.task(first)->order;
         QVERIFY(store.moveTask(second, inboxId(), std::nullopt, 0, instant(2026, 7, 31)));
-        QCOMPARE(store.tasksIn(inboxId(), std::nullopt)[0]->id, second);
-        QCOMPARE(store.task(first)->order, 1);
-        // Move across projects: the vacated list closes up and subtasks follow.
+        QCOMPARE(ids(inboxId(), std::nullopt), (QStringList{second, first}));
+        QCOMPARE(store.task(first)->order, firstKey);
+        QCOMPARE(store.task(first)->updatedAt, instant(2026, 7, 30));
+        QCOMPARE(store.task(second)->updatedAt, instant(2026, 7, 31));
+        // Move across projects: subtasks follow.
         const TaskId child = task(store, "Child");
         store.taskMut(child)->parentId = first;
         QVERIFY(store.moveTask(first, work, std::nullopt, 0, instant(2026, 7, 31)));
         QCOMPARE(store.task(child)->projectId, work);
-        QCOMPARE(store.task(second)->order, 0);
-        QCOMPARE(store.tasksIn(work, std::nullopt).size(), 2);
+        QCOMPARE(ids(work, std::nullopt), (QStringList{first, elsewhere}));
+        QCOMPARE(ids(inboxId(), std::nullopt), QStringList{second});
         // A section from another project is refused.
-        const SectionId section = store.projectMut(work)->addSection(Section::create("Doing"));
+        const SectionId section = store.addSection(Section::create(work, "Doing"), instant(2026, 7, 30));
         QVERIFY(!store.moveTask(second, inboxId(), section, 0, instant(2026, 7, 31)));
         QVERIFY(store.moveTask(second, work, section, 0, instant(2026, 7, 31)));
         QCOMPARE(store.tasksIn(work, section).size(), 1);
+        // Sections order by key too, and a moved one changes alone.
+        const SectionId blocked = store.addSection(Section::create(work, "Blocked"), instant(2026, 7, 30));
+        QVERIFY(store.moveSection(blocked, 0, instant(2026, 8, 1)));
+        QCOMPARE(store.sectionsIn(work)[0]->id, blocked);
+        QCOMPARE(store.section(section)->updatedAt, instant(2026, 7, 30));
+    }
+    void deletionsLeaveMarkersThatUndoClears() {
+        QTemporaryDir dir;
+        const QString path = dir.path() + "/planner.json";
+        Store store = Store::openAt(path);
+        const TaskId parent = task(store, "Parent");
+        const TaskId child = task(store, "Child");
+        store.taskMut(child)->parentId = parent;
+        const QList<Task> removed = store.removeTask(parent, instant(2026, 7, 31));
+        QVERIFY(store.isDeleted(RecordKind::Task, parent));
+        QVERIFY(store.isDeleted(RecordKind::Task, child));
+        QVERIFY(!store.save());
+        const Store reopened = Store::openAt(path);
+        QVERIFY(reopened.isDeleted(RecordKind::Task, parent));
+        QVERIFY(!reopened.task(parent));
+        store.restoreTasks(removed);
+        QVERIFY(!store.isDeleted(RecordKind::Task, parent));
+        // A project takes its sections and tasks, each marked by name.
+        const ProjectId work = store.addProject(Project::create("Work", Color::Blue), instant(2026, 7, 30));
+        const SectionId doing = store.addSection(Section::create(work, "Doing"), instant(2026, 7, 30));
+        const TaskId inside = store.addTask(Task::create(work, "Inside", instant(2026, 7, 30)));
+        const auto gone = store.removeProject(work, instant(2026, 7, 31));
+        QVERIFY(gone && gone->sections.size() == 1);
+        QVERIFY(store.isDeleted(RecordKind::Project, work) && store.isDeleted(RecordKind::Section, doing) && store.isDeleted(RecordKind::Task, inside));
+        store.restoreProject(*gone);
+        QVERIFY(!store.isDeleted(RecordKind::Section, doing) && store.sectionsIn(work).size() == 1);
+        // Markers older than the retention are dropped at load.
+        store.removeTask(inside, instant(2025, 1, 1));
+        QVERIFY(!store.save());
+        QVERIFY(!Store::openAt(path, nullptr, instant(2026, 7, 31)).isDeleted(RecordKind::Task, inside));
+        QVERIFY(Store::openAt(path, nullptr, instant(2025, 1, 2)).isDeleted(RecordKind::Task, inside));
+    }
+    void recordsMergeAndDeleteFromAnotherMachine() {
+        QTemporaryDir dir;
+        Store store = Store::openAt(dir.path() + "/planner.json");
+        Task incoming = Task::create(inboxId(), "From the Mac", instant(2026, 7, 30));
+        QVERIFY(store.mergeRecord(RecordKind::Task, incoming.toJson()));
+        QCOMPARE(store.task(incoming.id)->content, "From the Mac");
+        QCOMPARE(store.task(incoming.id)->updatedAt, instant(2026, 7, 30));   // keeps its own stamp
+        incoming.content = "Edited on the Mac";
+        QVERIFY(store.mergeRecord(RecordKind::Task, incoming.toJson()));
+        QCOMPARE(store.tasks().size(), 1);
+        QVERIFY(!store.mergeRecord(RecordKind::Task, QJsonObject{{"content", "no id"}}));
+        store.applyDeletion(RecordKind::Task, incoming.id, instant(2026, 7, 31));
+        QVERIFY(!store.task(incoming.id) && store.isDeleted(RecordKind::Task, incoming.id));
+        store.applyDeletion(RecordKind::Project, inboxId(), instant(2026, 7, 31));
+        QVERIFY(store.project(inboxId()));
+        QVERIFY(store.recordBody(RecordKind::Project, inboxId()).has_value());
+        QVERIFY(!store.recordBody(RecordKind::Task, incoming.id).has_value());
     }
     void quickAddFilesByName() {
         QTemporaryDir dir;
         Store store = Store::openAt(dir.path() + "/planner.json");
-        const ProjectId work = store.addProject(Project::create("Work", Color::Blue));
-        const SectionId admin = store.projectMut(work)->addSection(Section::create("Admin"));
+        const ProjectId work = store.addProject(Project::create("Work", Color::Blue), instant(2026, 7, 30));
+        const SectionId admin = store.addSection(Section::create(work, "Admin"), instant(2026, 7, 30));
         const QuickAdd parsed = parseQuickAdd("Email Sam #Work /Admin @email p2 friday 9am !30m", d(2026, 7, 30), store.vocabulary());
         const TaskId id = store.addFromQuickAdd(parsed, inboxId(), std::nullopt, instant(2026, 7, 30));
         const Task *t = store.task(id);

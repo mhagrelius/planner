@@ -1,11 +1,13 @@
 #include "app.h"
 
 #include "agent.h"
+#include "config.h"
 #include "dates.h"
 #include "demo.h"
 #include "palette.h"
 #include "present.h"
 #include "query.h"
+#include "remote.h"
 #include "search.h"
 
 #include <QDBusConnection>
@@ -18,10 +20,18 @@
 #include <QStandardPaths>
 
 #include <algorithm>
+#include <thread>
 
 using namespace planner;
 
 App *App::s_instance = nullptr;
+QMutex App::s_instanceMutex;
+
+namespace {
+constexpr int kSyncTickMs = 180 * 1000;
+constexpr int kSyncAfterEditMs = 3000;
+constexpr int kSyncFailuresBeforeSayingSo = 3;
+}
 
 namespace {
 
@@ -81,9 +91,16 @@ App::App(Palette *palette, const Options &options, QObject *parent)
     readSummonKey();
     recompute();
     for (const QString &name : options.acts) act(name);
+    // Scratch stores stay off the server: a demo must never push its sample
+    // tasks into the real list.
+    if (!options.demo) startSync();
 }
 
-App::~App() { saveNow(); }
+App::~App() {
+    saveNow();
+    QMutexLocker lock(&s_instanceMutex);
+    s_instance = nullptr;
+}
 
 App *App::create(QQmlEngine *, QJSEngine *) {
     Q_ASSERT(s_instance);
@@ -104,6 +121,16 @@ template <typename F>
 void App::mutate(F change) {
     change(m_store);
     m_dirty = true;
+    // Something changed here; get it to the other machines. A pull being
+    // applied goes through here too, and must not be pushed straight back.
+    if (!m_applyingSync) syncAfterEdit();
+}
+
+// Run on the main thread, from a worker, if the App is still there.
+template <typename F>
+void App::onMainThread(F functor) {
+    QMutexLocker lock(&s_instanceMutex);
+    if (s_instance) QMetaObject::invokeMethod(s_instance, functor, Qt::QueuedConnection);
 }
 
 void App::saveNow() {
@@ -132,9 +159,195 @@ std::pair<QString, bool> App::agentCommand(const QStringList &args) {
     if (result.changedStore) {
         m_dirty = true;
         saveNow();
+        syncAfterEdit();
     }
     recompute();
     return {agent::render(result), result.ok};
+}
+
+// --- sync -------------------------------------------------------------------------
+
+// Sync is off until a URL and a token are written in the config on purpose:
+// there is nothing sensible to guess at, and a planner that will not open
+// because a NAS is down is worse than one that does not sync.
+void App::startSync() {
+    const Config config = Config::load();
+    m_syncTarget = config.syncTarget();
+    if (!m_syncTarget) return;
+    m_syncBase = sync::loadBase(sync::defaultBasePath(m_store.path()));
+    // A first pass shortly after startup, then a backstop tick; the long poll
+    // does the rest.
+    m_syncTick.setInterval(kSyncTickMs);
+    connect(&m_syncTick, &QTimer::timeout, this, &App::syncNow);
+    m_syncTick.start();
+    m_syncSoon.setSingleShot(true);
+    m_syncSoon.setInterval(kSyncAfterEditMs);
+    connect(&m_syncSoon, &QTimer::timeout, this, &App::syncNow);
+    syncNow();
+}
+
+// One pass: network on a worker, every local write back here. The worker is
+// handed a snapshot and the bodies it needs and gives back records; nothing
+// below this opens the planner file.
+void App::syncNow() {
+    if (!m_syncTarget || m_syncing) return;
+    QString parseError;
+    auto remote = HttpRemote::parse(m_syncTarget->first, m_syncTarget->second, &parseError);
+    if (!remote) {
+        reportSyncFailure(parseError);
+        return;
+    }
+    const sync::Snapshot base = m_syncBase;
+    const sync::Snapshot local = sync::snapshotOf(m_store);
+    QMap<sync::Key, QJsonObject> bodies;
+    for (auto it = local.begin(); it != local.end(); ++it)
+        if (const auto body = m_store.recordBody(it.key().kind, it.key().id)) bodies.insert(it.key(), *body);
+    m_syncing = true;
+    std::thread([remote = *remote, base, local, bodies]() mutable {
+        sync::Error error;
+        const auto incoming = sync::gather(remote, base, local, [&](const sync::Key &key) -> std::optional<QJsonObject> {
+            const auto it = bodies.constFind(key);
+            if (it == bodies.constEnd()) return std::nullopt;
+            return it.value();
+        }, &error);
+        const QString message = error.message;
+        onMainThread([incoming, message]() { s_instance->finishSync(incoming, message); });
+    }).detach();
+}
+
+void App::finishSync(const std::optional<sync::Incoming> &incoming, const QString &error) {
+    m_syncing = false;
+    if (!incoming) {
+        reportSyncFailure(error);
+        return;
+    }
+    // A pull landing on the task open in the detail pane would take the text
+    // out from under the cursor; held back, and offered again next pass.
+    const QString open = m_openTask;
+    const auto held = [open](const sync::Key &key) { return !open.isEmpty() && key.kind == RecordKind::Task && key.id == open; };
+    m_applyingSync = true;
+    sync::Report report;
+    mutate([&](Store &store) { std::tie(report, m_syncBase) = sync::apply(store, *incoming, held); });
+    m_applyingSync = false;
+    sync::saveBase(m_syncBase, sync::defaultBasePath(m_store.path()));
+    m_syncFailures = 0;
+    m_syncLastPass = QDateTime::currentDateTimeUtc();
+    m_syncLastFailure.clear();
+    m_syncError.clear();
+    // Nothing at all on a clean pass. Sync is awareness, not applause.
+    recompute();
+    waitForChanges();
+}
+
+// Park a worker on the server until another machine writes, so an edit made
+// elsewhere arrives in about as long as the network takes.
+void App::waitForChanges() {
+    if (!m_syncTarget || m_syncing) return;
+    QString parseError;
+    auto remote = HttpRemote::parse(m_syncTarget->first, m_syncTarget->second, &parseError);
+    if (!remote) return;
+    m_syncing = true;
+    const QDateTime since = m_syncCursor.value_or(epoch());
+    std::thread([remote = *remote, since]() mutable {
+        sync::Error error;
+        const auto answer = remote.waitForChange(since, &error);
+        const bool ok = answer.has_value();
+        const bool changed = ok && answer->first;
+        const QDateTime cursor = ok ? answer->second : since;
+        onMainThread([ok, changed, cursor]() { s_instance->finishWait(ok, changed, cursor); });
+    }).detach();
+}
+
+void App::finishWait(bool ok, bool changed, const QDateTime &cursor) {
+    m_syncing = false;
+    // A failed wait says nothing: the backstop tick is what a NAS that went
+    // away is for, and a banner per failed wait would be one a minute.
+    if (!ok) return;
+    m_syncCursor = cursor;
+    if (changed) syncNow();
+    else waitForChanges();
+}
+
+// Debounced: typing a title fires this on every keystroke.
+void App::syncAfterEdit() {
+    if (!m_syncTarget || m_applyingSync) return;
+    m_syncSoon.start();
+}
+
+// Not reported the first time: a NAS asleep, a laptop between networks and a
+// suspended machine all produce one failed pass. It becomes an ongoing
+// condition worth a line once it has kept failing.
+void App::reportSyncFailure(const QString &message) {
+    m_syncFailures += 1;
+    m_syncLastFailure = message;
+    if (m_syncFailures >= kSyncFailuresBeforeSayingSo && m_syncError != message) {
+        m_syncError = message;
+        recompute();
+    }
+}
+
+static QString ago(const QDateTime &when) {
+    const qint64 seconds = when.secsTo(QDateTime::currentDateTimeUtc());
+    if (seconds < 60) return QStringLiteral("just now");
+    if (seconds < 3600) return QStringLiteral("%1 min ago").arg(seconds / 60);
+    if (seconds < 86400) return QStringLiteral("%1 h ago").arg(seconds / 3600);
+    return when.toLocalTime().toString(QStringLiteral("d MMM HH:mm"));
+}
+
+QJsonObject App::syncStatusJson() const {
+    QJsonObject json;
+    json.insert(QStringLiteral("configured"), m_syncTarget.has_value());
+    if (m_syncTarget) json.insert(QStringLiteral("server"), m_syncTarget->first);
+    json.insert(QStringLiteral("config"), Config::defaultPath());
+    json.insert(QStringLiteral("file"), m_store.path());
+    const int here = sync::liveCount(sync::snapshotOf(m_store));
+    json.insert(QStringLiteral("records"), here);
+    if (m_syncTarget) {
+        json.insert(QStringLiteral("agreed"), sync::liveCount(m_syncBase));
+        json.insert(QStringLiteral("busy"), m_syncing);
+        if (m_syncLastPass) json.insert(QStringLiteral("last_pass"), instantSerial(*m_syncLastPass));
+        if (!m_syncLastFailure.isEmpty()) json.insert(QStringLiteral("last_failure"), m_syncLastFailure);
+    }
+    return json;
+}
+
+void App::showSyncStatus() {
+    m_promptRows.clear();
+    const int here = sync::liveCount(sync::snapshotOf(m_store));
+    auto row = [&](const QString &k, const QString &v) { m_promptRows.append(QVariantMap{{QStringLiteral("k"), k}, {QStringLiteral("v"), v}}); };
+    row(QStringLiteral("server"), m_syncTarget ? m_syncTarget->first : QStringLiteral("not set up — this planner stays on this machine"));
+    row(QStringLiteral("records here"), countOf(here).replace(QStringLiteral("task"), QStringLiteral("record")));
+    if (m_syncTarget) {
+        // How many records this machine and the server last agreed on. Short
+        // of the local count means work left, not something broken.
+        const int agreed = sync::liveCount(m_syncBase);
+        row(QStringLiteral("synced"), here == 0 && agreed == 0 ? QStringLiteral("nothing to sync yet") : agreed == 0 ? QStringLiteral("not yet — the first pass has not finished")
+                                     : agreed >= here ? QStringLiteral("all %1").arg(here) : QStringLiteral("%1 of %2, the rest on the next pass").arg(agreed).arg(here));
+        row(QStringLiteral("last pass"), !m_syncLastFailure.isEmpty() ? QStringLiteral("failed — %1").arg(m_syncLastFailure)
+                                        : m_syncLastPass ? ago(*m_syncLastPass) : m_syncing ? QStringLiteral("running now") : QStringLiteral("not since Planner was opened"));
+    }
+    row(QStringLiteral("file"), m_store.path());
+    m_prompt = QStringLiteral("status");
+    m_promptTitle = !m_syncTarget ? QStringLiteral("Syncing is off. Set sync_url and sync_token in %1 to share this planner between machines.").arg(Config::defaultPath())
+                  : !m_syncLastFailure.isEmpty() ? QStringLiteral("Nothing here is at risk — the copy on this machine is the one that counts, and the next pass will try again.")
+                  : QStringLiteral("A pass runs when an edit settles, and the server holds a request open so a change made elsewhere arrives as it happens.");
+    m_promptQuery.clear();
+    recompute();
+}
+
+std::pair<QString, bool> App::syncCommand(const QStringList &args) {
+    const QString verb = args.value(1, QStringLiteral("status"));
+    if (verb == u"now") {
+        if (!m_syncTarget) return {QStringLiteral("{\"ok\": false, \"error\": \"not-configured\", \"message\": \"Set sync_url and sync_token in %1.\"}").arg(Config::defaultPath()), false};
+        syncNow();
+        QJsonObject json = syncStatusJson();
+        json.insert(QStringLiteral("ok"), true);
+        json.insert(QStringLiteral("started"), true);
+        return {QString::fromUtf8(QJsonDocument(json).toJson(QJsonDocument::Indented)).trimmed(), true};
+    }
+    QJsonObject json = syncStatusJson();
+    json.insert(QStringLiteral("ok"), true);
+    return {QString::fromUtf8(QJsonDocument(json).toJson(QJsonDocument::Indented)).trimmed(), true};
 }
 
 // --- the Hyprland summon binding ------------------------------------------------
@@ -316,6 +529,8 @@ void App::openTaskId(const QString &id) {
 void App::closeDetail() {
     m_openTask.clear();
     recompute();
+    // A pull held back for the open task is offered again now.
+    if (m_syncTarget && !m_syncing) syncNow();
 }
 
 void App::pinCursor() {
@@ -360,7 +575,7 @@ void App::completeIds(const QList<TaskId> &ids) {
 void App::deleteIds(const QList<TaskId> &ids) {
     QList<Task> removed;
     mutate([&](Store &store) {
-        for (const TaskId &id : ids) removed.append(store.removeTask(id));
+        for (const TaskId &id : ids) removed.append(store.removeTask(id, now()));
     });
     if (removed.isEmpty()) return;
     m_undo = Undo{QStringLiteral("deleted"), {}, removed, std::nullopt, std::nullopt};
@@ -512,7 +727,7 @@ void App::toggleLabel(const QString &id, const QString &name, bool on) {
     const QString trimmed = name.trimmed();
     if (trimmed.isEmpty()) return;
     mutate([&](Store &store) {
-        const LabelId label = store.labelForName(trimmed);
+        const LabelId label = store.labelForName(trimmed, now());
         if (Task *task = store.taskMut(id)) {
             if (on) task->addLabel(label);
             else task->removeLabel(label);
@@ -563,6 +778,7 @@ void App::closePrompt() {
     m_inputPayload.clear();
     m_promptError.clear();
     m_keepAdding = false;
+    m_promptRows.clear();
     recompute();
 }
 
@@ -606,11 +822,11 @@ void App::finishInput() {
     if (action == u"new-section") {
         if (text.isEmpty()) return;
         const ProjectId project = payload.value(QStringLiteral("project")).toString();
-        mutate([&](Store &store) { if (Project *owner = store.projectMut(project)) owner->addSection(Section::create(text)); });
+        mutate([&](Store &store) { if (store.project(project)) store.addSection(Section::create(project, text), now()); });
         toast(QStringLiteral("Section “%1” added").arg(text), false);
     } else if (action == u"rename-section") {
         if (text.isEmpty()) return;
-        mutate([&](Store &store) { store.renameSection(payload.value(QStringLiteral("section")).toString(), text); });
+        mutate([&](Store &store) { store.renameSection(payload.value(QStringLiteral("section")).toString(), text, now()); });
     } else if (action == u"new-project") {
         if (text.isEmpty()) return;
         std::optional<ProjectId> parent;
@@ -619,14 +835,19 @@ void App::finishInput() {
         mutate([&](Store &store) {
             Project project = Project::create(text, store.nextProjectColor());
             project.parentId = parent;
-            id = store.addProject(project);
+            id = store.addProject(project, now());
         });
         closePrompt();
         go(QStringLiteral("project:") + id);
         return;
     } else if (action == u"rename-project") {
         if (text.isEmpty()) return;
-        mutate([&](Store &store) { if (Project *project = store.projectMut(payload.value(QStringLiteral("project")).toString())) project->name = text; });
+        mutate([&](Store &store) {
+            if (Project *project = store.projectMut(payload.value(QStringLiteral("project")).toString())) {
+                project->name = text;
+                project->touch(now());
+            }
+        });
     } else if (action == u"filter-query") {
         // A saved filter that will not parse matches nothing, and the editor
         // says why while you type; Enter on a broken one changes nothing.
@@ -652,7 +873,7 @@ void App::finishInput() {
                     filter.order = existing->order;
                 }
             }
-            id = store.putFilter(filter);
+            id = store.putFilter(filter, now());
         });
         closePrompt();
         go(QStringLiteral("filter:") + id);
@@ -660,7 +881,7 @@ void App::finishInput() {
     } else if (action == u"confirm-delete-project") {
         const ProjectId project = payload.value(QStringLiteral("project")).toString();
         std::optional<RemovedProject> removed;
-        mutate([&](Store &store) { removed = store.removeProject(project); });
+        mutate([&](Store &store) { removed = store.removeProject(project, now()); });
         if (removed) {
             m_undo = Undo{QStringLiteral("project"), {}, {}, std::nullopt, removed};
             toast(QStringLiteral("Deleted the project and %1").arg(countOf(removed->tasks.size())), true);
@@ -699,6 +920,7 @@ void App::runPrompt() {
     }
     if (m_prompt == u"input") { finishInput(); return; }
     if (m_prompt == u"confirm") { finishInput(); return; }
+    if (m_prompt == u"status") { closePrompt(); return; }
     // Palette and find: run the highlighted result.
     int seen = 0;
     for (const QVariant &entry : m_promptResults) {
@@ -753,10 +975,12 @@ void App::runPaletteItem(const QVariantMap &item) {
     if (action == u"date") { closePrompt(); openDatePicker(); return; }
     if (action == u"deadline") { closePrompt(); openDeadlinePicker(); return; }
     if (action == u"undo") { closePrompt(); undo(); return; }
+    if (action == u"sync-status") { closePrompt(); showSyncStatus(); return; }
+    if (action == u"sync-now") { closePrompt(); syncNow(); toast(QStringLiteral("Syncing with %1").arg(m_syncTarget ? m_syncTarget->first : QString()), false); return; }
     if (action == u"new-section" && project) { beginInput(action, QStringLiteral("new section in #%1").arg(m_store.project(*project)->name), QStringLiteral("In progress"), {}, {{QStringLiteral("project"), *project}}); return; }
     if (action == u"rename-section") {
         const SectionId section = item.value(QStringLiteral("section")).toString();
-        beginInput(action, QStringLiteral("rename the section"), {}, m_store.section(section).second->name, {{QStringLiteral("section"), section}});
+        beginInput(action, QStringLiteral("rename the section"), {}, m_store.section(section)->name, {{QStringLiteral("section"), section}});
         return;
     }
     if (action == u"delete-section") {
@@ -793,13 +1017,13 @@ void App::runPaletteItem(const QVariantMap &item) {
         return;
     }
     if (action == u"delete-filter" && filter) {
-        mutate([&](Store &store) { store.removeFilter(*filter); });
+        mutate([&](Store &store) { store.removeFilter(*filter, now()); });
         closePrompt();
         go(QStringLiteral("today"));
         return;
     }
     if (action == u"show-completed" && project) {
-        mutate([&](Store &store) { if (Project *p = store.projectMut(*project)) p->showCompleted = !p->showCompleted; });
+        mutate([&](Store &store) { if (Project *p = store.projectMut(*project)) { p->showCompleted = !p->showCompleted; p->touch(now()); } });
         closePrompt();
         return;
     }
@@ -810,8 +1034,10 @@ void App::toggleStyle() {
     const auto view = currentView();
     if (!view || !view->projectId()) return;
     mutate([&](Store &store) {
-        if (Project *project = store.projectMut(*view->projectId()))
+        if (Project *project = store.projectMut(*view->projectId())) {
             project->viewStyle = project->viewStyle == ViewStyle::Board ? ViewStyle::List : ViewStyle::Board;
+            project->touch(now());
+        }
     });
     recompute();
 }
@@ -1055,6 +1281,7 @@ void App::act(const QString &name) {
     else if (name == u"board") { if (!m_board) toggleStyle(); moveColumn(1); }
     else if (name == u"picker") { cursorTo(2); openDatePicker(); }
     else if (name == u"norail") toggleRail();
+    else if (name == u"sync") showSyncStatus();
     else if (name.startsWith(u"cursor:")) cursorTo(name.mid(7).toInt());
 }
 
@@ -1166,7 +1393,7 @@ void App::buildContent() {
         laneNames << QString();
         m_laneSections.append(std::nullopt);
         laneTasks.append(m_store.tasksIn(project->id, std::nullopt));
-        for (const Section *section : project->sectionsOrdered()) {
+        for (const Section *section : m_store.sectionsIn(project->id)) {
             laneNames << section->name;
             m_laneSections.append(section->id);
             laneTasks.append(m_store.tasksIn(project->id, section->id));
@@ -1261,8 +1488,7 @@ void App::buildDetail() {
     const Project *project = m_store.project(task->projectId);
     m_detail.insert(QStringLiteral("project"), QLatin1Char('#') + (project ? project->name : QStringLiteral("?")));
     if (task->sectionId) {
-        const auto found = m_store.section(*task->sectionId);
-        if (found.second) m_detail.insert(QStringLiteral("section"), QLatin1Char('/') + found.second->name);
+        if (const Section *section = m_store.section(*task->sectionId)) m_detail.insert(QStringLiteral("section"), QLatin1Char('/') + section->name);
     }
     QStringList labels;
     for (const LabelId &id : task->labels)
@@ -1337,7 +1563,7 @@ void App::buildPrompt() {
         return;
     }
 
-    if (m_prompt == u"input" || m_prompt == u"confirm") {
+    if (m_prompt == u"input" || m_prompt == u"confirm" || m_prompt == u"status") {
         if (m_inputAction == u"filter-query") {
             QueryError error;
             m_promptError = query.isEmpty() || Query::parse(query, &error) ? QString() : error.message;
@@ -1372,7 +1598,7 @@ void App::buildPrompt() {
         action(QStringLiteral("new-section"), QStringLiteral("Add Section…"), QStringLiteral("list-add"), QStringLiteral("ctrl+shift+n"), in);
         if (cursor && m_cursor < m_rowPlaces.size()) {
             if (const auto section = m_laneSections.value(m_rowPlaces.at(m_cursor).first)) {
-                const QString name = m_store.section(*section).second->name;
+                const QString name = m_store.section(*section)->name;
                 action(QStringLiteral("rename-section"), QStringLiteral("Rename Section…"), QStringLiteral("document-edit"), {}, QLatin1Char('/') + name, {{QStringLiteral("section"), *section}});
                 action(QStringLiteral("delete-section"), QStringLiteral("Delete Section"), QStringLiteral("user-trash"), {}, QLatin1Char('/') + name, {{QStringLiteral("section"), *section}});
             }
@@ -1398,6 +1624,8 @@ void App::buildPrompt() {
     action(QStringLiteral("new-project"), QStringLiteral("New Project…"), QStringLiteral("folder-new"), {}, {});
     action(QStringLiteral("new-filter"), QStringLiteral("New Filter…"), QStringLiteral("edit-find"), {}, {});
     action(QStringLiteral("toggle-rail"), m_railVisible ? QStringLiteral("Hide Rail") : QStringLiteral("Show Rail"), QStringLiteral("sidebar-show"), QStringLiteral("ctrl+b"), {});
+    action(QStringLiteral("sync-status"), QStringLiteral("Sync…"), QStringLiteral("view-continuous"), {}, m_syncTarget ? (m_syncLastFailure.isEmpty() ? (m_syncLastPass ? ago(*m_syncLastPass) : QString()) : QStringLiteral("failing")) : QStringLiteral("off"));
+    if (m_syncTarget) action(QStringLiteral("sync-now"), QStringLiteral("Sync Now"), QStringLiteral("view-continuous"), {}, m_syncTarget->first);
     if (m_undo) action(QStringLiteral("undo"), QStringLiteral("Undo"), QStringLiteral("edit-clear"), QStringLiteral("ctrl+z"), {});
 
     auto viewEntry = [&](const View &v) {
@@ -1521,10 +1749,13 @@ void App::buildStatus() {
         middle = m_toast.value(QStringLiteral("text")).toString();
         if (m_toast.value(QStringLiteral("undo")).toBool()) middle += QStringLiteral(" · ctrl+z undo");
     }
+    // An active save failure outranks a sync problem: that is data not being
+    // written right now.
+    if (!m_syncError.isEmpty() && m_toast.isEmpty()) middle = QStringLiteral("sync: %1").arg(m_syncError);
     if (!m_saveError.isEmpty()) middle = m_saveError;
     m_status.insert(QStringLiteral("left"), left);
     m_status.insert(QStringLiteral("middle"), middle);
-    m_status.insert(QStringLiteral("middleRole"), !m_saveError.isEmpty() ? QStringLiteral("negative") : !m_toast.isEmpty() ? QStringLiteral("text") : QString());
+    m_status.insert(QStringLiteral("middleRole"), !m_saveError.isEmpty() ? QStringLiteral("negative") : (!m_syncError.isEmpty() && m_toast.isEmpty()) ? QStringLiteral("warning") : !m_toast.isEmpty() ? QStringLiteral("text") : QString());
     m_status.insert(QStringLiteral("right"), right);
     m_status.insert(QStringLiteral("keys"), keys);
     m_status.insert(QStringLiteral("selecting"), m_selecting);

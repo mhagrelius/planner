@@ -1,5 +1,7 @@
 #include "store.h"
 
+#include "order.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -7,7 +9,6 @@
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QSaveFile>
-#include <QStandardPaths>
 
 #include <algorithm>
 
@@ -29,10 +30,8 @@ Store Store::detached() {
     return store;
 }
 
-// Move an unreadable file aside so the app can start. The timestamp in the
-// name means repeated failures cannot overwrite the first, most useful, copy.
-static LoadOutcome quarantine(const QString &path, const QString &reason) {
-    const QString backup = path + QStringLiteral(".corrupt-%1").arg(QDateTime::currentSecsSinceEpoch());
+static LoadOutcome quarantine(const QString &path, const QString &reason, const QDateTime &now) {
+    const QString backup = path + QStringLiteral(".corrupt-%1").arg(now.toSecsSinceEpoch());
     QFile::rename(path, backup);
     LoadOutcome outcome;
     outcome.kind = LoadOutcome::Recovered;
@@ -41,7 +40,7 @@ static LoadOutcome quarantine(const QString &path, const QString &reason) {
     return outcome;
 }
 
-Store Store::openAt(const QString &path, LoadOutcome *outcome) {
+Store Store::openAt(const QString &path, LoadOutcome *outcome, const QDateTime &now) {
     Store store;
     store.m_path = path;
     store.m_projects.append(Project::inbox());
@@ -51,26 +50,33 @@ Store Store::openAt(const QString &path, LoadOutcome *outcome) {
     if (!file.exists()) {
         result.kind = LoadOutcome::Fresh;
     } else if (!file.open(QIODevice::ReadOnly)) {
-        result = quarantine(path, file.errorString());
+        result = quarantine(path, file.errorString(), now);
     } else {
         QJsonParseError error;
         const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
         if (error.error != QJsonParseError::NoError || !document.isObject()) {
-            result = quarantine(path, error.error == QJsonParseError::NoError ? QStringLiteral("not a JSON object") : error.errorString());
+            result = quarantine(path, error.error == QJsonParseError::NoError ? QStringLiteral("not a JSON object") : error.errorString(), now);
         } else {
             const QJsonObject root = document.object();
             store.m_version = root.value(QStringLiteral("version")).toInt(kSchemaVersion);
             store.m_projects.clear();
             for (const QJsonValue &value : root.value(QStringLiteral("projects")).toArray()) store.m_projects.append(Project::fromJson(value.toObject()));
+            for (const QJsonValue &value : root.value(QStringLiteral("sections")).toArray()) store.m_sections.append(Section::fromJson(value.toObject()));
             for (const QJsonValue &value : root.value(QStringLiteral("labels")).toArray()) store.m_labels.append(Label::fromJson(value.toObject()));
             for (const QJsonValue &value : root.value(QStringLiteral("tasks")).toArray()) store.m_tasks.append(Task::fromJson(value.toObject()));
             for (const QJsonValue &value : root.value(QStringLiteral("filters")).toArray()) store.m_filters.append(SavedFilter::fromJson(value.toObject()));
+            for (const QJsonValue &value : root.value(QStringLiteral("tombstones")).toArray())
+                if (const auto tombstone = Tombstone::fromJson(value.toObject())) store.m_tombstones.append(*tombstone);
             store.ensureInbox();
+            store.liftLegacySections();
+            store.purgeTombstones(now);
             if (store.m_version > kSchemaVersion) {
                 store.m_readOnly = true;
                 result.kind = LoadOutcome::ReadOnly;
                 result.version = store.m_version;
             } else {
+                // Written back in the shape this build writes.
+                store.m_version = kSchemaVersion;
                 result.kind = LoadOutcome::Loaded;
             }
         }
@@ -79,22 +85,43 @@ Store Store::openAt(const QString &path, LoadOutcome *outcome) {
     return store;
 }
 
-// A hand-edited file that has lost its Inbox would strand every task that
-// points at it.
 void Store::ensureInbox() {
     for (const Project &project : m_projects)
         if (project.isInbox()) return;
     m_projects.prepend(Project::inbox());
 }
 
+// Runs on every open rather than only when the version says v1: a merged or
+// hand-edited file can hold both shapes, and a section left nested is a board
+// column that silently stops existing.
+void Store::liftLegacySections() {
+    for (Project &project : m_projects) {
+        for (const Section &legacy : project.legacySections) {
+            bool already = false;
+            for (const Section &existing : m_sections)
+                if (existing.id == legacy.id) already = true;
+            if (!already) m_sections.append(legacy);
+        }
+        project.legacySections.clear();
+    }
+}
+
+void Store::purgeTombstones(const QDateTime &now) {
+    const QDateTime cutoff = now.addDays(-kTombstoneRetentionDays);
+    m_tombstones.erase(std::remove_if(m_tombstones.begin(), m_tombstones.end(), [&](const Tombstone &t) { return t.deletedAt <= cutoff; }), m_tombstones.end());
+}
+
 QJsonObject Store::toJson() const {
-    QJsonArray projects, labels, tasks, filters;
+    QJsonArray projects, sections, labels, tasks, filters, tombstones;
     for (const Project &project : m_projects) projects.append(project.toJson());
+    for (const Section &section : m_sections) sections.append(section.toJson());
     for (const Label &label : m_labels) labels.append(label.toJson());
     for (const Task &task : m_tasks) tasks.append(task.toJson());
     for (const SavedFilter &filter : m_filters) filters.append(filter.toJson());
-    return QJsonObject{{QStringLiteral("version"), m_version}, {QStringLiteral("projects"), projects},
-                       {QStringLiteral("labels"), labels}, {QStringLiteral("tasks"), tasks}, {QStringLiteral("filters"), filters}};
+    for (const Tombstone &tombstone : m_tombstones) tombstones.append(tombstone.toJson());
+    return QJsonObject{{QStringLiteral("version"), m_version}, {QStringLiteral("projects"), projects}, {QStringLiteral("sections"), sections},
+                       {QStringLiteral("labels"), labels}, {QStringLiteral("tasks"), tasks}, {QStringLiteral("filters"), filters},
+                       {QStringLiteral("tombstones"), tombstones}};
 }
 
 std::optional<SaveError> Store::save() const {
@@ -104,9 +131,6 @@ std::optional<SaveError> Store::save() const {
                              .arg(m_version).arg(kSchemaVersion)};
     }
     QDir().mkpath(QFileInfo(m_path).absolutePath());
-    // QSaveFile writes a temporary beside the target, flushes it, and renames
-    // it over the original on commit, so an interrupted write leaves the old
-    // file untouched.
     QSaveFile file(m_path);
     if (!file.open(QIODevice::WriteOnly))
         return SaveError{SaveError::Io, QStringLiteral("could not write the planner file: %1").arg(file.errorString())};
@@ -116,7 +140,105 @@ std::optional<SaveError> Store::save() const {
     return std::nullopt;
 }
 
-// --- projects ----------------------------------------------------------------
+// --- tombstones ------------------------------------------------------------------
+
+void Store::markDeleted(RecordKind kind, const QString &id, const QDateTime &now) {
+    unmark(kind, id);
+    m_tombstones.append(Tombstone{kind, id, now.toUTC()});
+}
+
+// An undo that left the marker would delete the record again on the next sync.
+void Store::unmark(RecordKind kind, const QString &id) {
+    m_tombstones.erase(std::remove_if(m_tombstones.begin(), m_tombstones.end(), [&](const Tombstone &t) { return t.kind == kind && t.id == id; }), m_tombstones.end());
+}
+
+bool Store::isDeleted(RecordKind kind, const QString &id) const {
+    for (const Tombstone &t : m_tombstones)
+        if (t.kind == kind && t.id == id) return true;
+    return false;
+}
+
+template <typename T>
+static void replaceById(QList<T> &items, const T &incoming) {
+    for (T &existing : items) {
+        if (existing.id == incoming.id) {
+            existing = incoming;
+            return;
+        }
+    }
+    items.append(incoming);
+}
+
+bool Store::mergeRecord(RecordKind kind, const QJsonObject &body) {
+    if (body.value(QStringLiteral("id")).toString().isEmpty()) return false;
+    switch (kind) {
+    case RecordKind::Task: {
+        const Task task = Task::fromJson(body);
+        if (task.projectId.isEmpty() || !body.contains(QStringLiteral("added_at"))) return false;
+        unmark(kind, task.id);
+        replaceById(m_tasks, task);
+        return true;
+    }
+    case RecordKind::Project: {
+        const Project project = Project::fromJson(body);
+        unmark(kind, project.id);
+        replaceById(m_projects, project);
+        return true;
+    }
+    case RecordKind::Section: {
+        const Section section = Section::fromJson(body);
+        if (section.projectId.isEmpty()) return false;
+        unmark(kind, section.id);
+        replaceById(m_sections, section);
+        return true;
+    }
+    case RecordKind::Label: {
+        const Label label = Label::fromJson(body);
+        unmark(kind, label.id);
+        replaceById(m_labels, label);
+        return true;
+    }
+    case RecordKind::Filter: {
+        const SavedFilter filter = SavedFilter::fromJson(body);
+        unmark(kind, filter.id);
+        replaceById(m_filters, filter);
+        return true;
+    }
+    }
+    return false;
+}
+
+template <typename T>
+static void eraseById(QList<T> &items, const QString &id) {
+    items.erase(std::remove_if(items.begin(), items.end(), [&](const T &item) { return item.id == id; }), items.end());
+}
+
+void Store::applyDeletion(RecordKind kind, const QString &id, const QDateTime &at) {
+    switch (kind) {
+    case RecordKind::Task: eraseById(m_tasks, id); break;
+    case RecordKind::Project:
+        if (id == inboxId()) return;
+        eraseById(m_projects, id);
+        break;
+    case RecordKind::Section: eraseById(m_sections, id); break;
+    case RecordKind::Label: eraseById(m_labels, id); break;
+    case RecordKind::Filter: eraseById(m_filters, id); break;
+    }
+    markDeleted(kind, id, at);
+}
+
+std::optional<QJsonObject> Store::recordBody(RecordKind kind, const QString &id) const {
+    switch (kind) {
+    case RecordKind::Task: if (const Task *t = task(id)) return t->toJson(); break;
+    case RecordKind::Project: if (const Project *p = project(id)) return p->toJson(); break;
+    case RecordKind::Section: if (const Section *s = section(id)) return s->toJson(); break;
+    case RecordKind::Label: if (const Label *l = label(id)) return l->toJson(); break;
+    case RecordKind::Filter: if (const SavedFilter *f = filter(id)) return f->toJson(); break;
+    }
+    return std::nullopt;
+}
+
+// --- projects --------------------------------------------------------------------
 
 const Project *Store::project(const ProjectId &id) const {
     for (const Project &project : m_projects)
@@ -150,18 +272,19 @@ QList<const Project *> Store::subprojects(const ProjectId &parent) const {
 
 QList<ProjectId> Store::projectAndDescendants(const ProjectId &root) const {
     QList<ProjectId> found{root};
-    for (int index = 0; index < found.size(); ++index) {
+    for (int index = 0; index < found.size(); ++index)
         for (const Project *child : subprojects(found.at(index)))
             if (!found.contains(child->id)) found.append(child->id);
-    }
     return found;
 }
 
-ProjectId Store::addProject(Project project) {
+ProjectId Store::addProject(Project project, const QDateTime &now) {
+    project.touch(now);
     int max = -1;
     bool any = false;
     for (const Project &existing : m_projects) { max = any ? std::max(max, existing.order) : existing.order; any = true; }
     project.order = any ? max + 1 : 0;
+    unmark(RecordKind::Project, project.id);
     m_projects.append(project);
     return project.id;
 }
@@ -182,17 +305,26 @@ static QList<T> extract(QList<T> &items, F doomed) {
     return taken;
 }
 
-std::optional<RemovedProject> Store::removeProject(const ProjectId &id) {
+std::optional<RemovedProject> Store::removeProject(const ProjectId &id, const QDateTime &now) {
     if (id == inboxId() || !project(id)) return std::nullopt;
     const QList<ProjectId> doomed = projectAndDescendants(id);
     RemovedProject removed;
     removed.projects = extract(m_projects, [&](const Project &p) { return doomed.contains(p.id); });
+    removed.sections = extract(m_sections, [&](const Section &s) { return doomed.contains(s.projectId); });
     removed.tasks = extract(m_tasks, [&](const Task &t) { return doomed.contains(t.projectId); });
+    // Each record individually: a machine replaying this needs the same set.
+    for (const Project &p : removed.projects) markDeleted(RecordKind::Project, p.id, now);
+    for (const Section &s : removed.sections) markDeleted(RecordKind::Section, s.id, now);
+    for (const Task &t : removed.tasks) markDeleted(RecordKind::Task, t.id, now);
     return removed;
 }
 
 void Store::restoreProject(const RemovedProject &removed) {
+    for (const Project &p : removed.projects) unmark(RecordKind::Project, p.id);
+    for (const Section &s : removed.sections) unmark(RecordKind::Section, s.id);
+    for (const Task &t : removed.tasks) unmark(RecordKind::Task, t.id);
     m_projects.append(removed.projects);
+    m_sections.append(removed.sections);
     m_tasks.append(removed.tasks);
 }
 
@@ -202,40 +334,65 @@ const Project *Store::projectByName(const QString &name) const {
     return nullptr;
 }
 
-// --- sections ----------------------------------------------------------------
+// --- sections --------------------------------------------------------------------
 
-std::pair<const Project *, const Section *> Store::section(const SectionId &id) const {
-    for (const Project &project : m_projects)
-        if (const Section *section = project.section(id)) return {&project, section};
-    return {nullptr, nullptr};
+const Section *Store::section(const SectionId &id) const {
+    for (const Section &section : m_sections)
+        if (section.id == id) return &section;
+    return nullptr;
 }
 
-// Tasks go back to the project's own list rather than being deleted with it.
+Section *Store::sectionMut(const SectionId &id) {
+    for (Section &section : m_sections)
+        if (section.id == id) return &section;
+    return nullptr;
+}
+
+QList<const Section *> Store::sectionsIn(const ProjectId &project) const {
+    QList<const Section *> ordered;
+    for (const Section &section : m_sections)
+        if (section.projectId == project) ordered.append(&section);
+    std::stable_sort(ordered.begin(), ordered.end(), [](const Section *a, const Section *b) {
+        const int c = order::compare(a->order, b->order);
+        return c != 0 ? c < 0 : a->id < b->id;
+    });
+    return ordered;
+}
+
+SectionId Store::addSection(Section section, const QDateTime &now) {
+    section.touch(now);
+    const auto siblings = sectionsIn(section.projectId);
+    section.order = order::between(siblings.isEmpty() ? QString() : siblings.last()->order, QString());
+    unmark(RecordKind::Section, section.id);
+    m_sections.append(section);
+    return section.id;
+}
+
 std::optional<RemovedSection> Store::removeSection(const SectionId &id, const QDateTime &now) {
-    const auto found = section(id);
-    if (!found.first) return std::nullopt;
-    const ProjectId projectId = found.first->id;
-    const auto removedSection = projectMut(projectId)->removeSection(id);
-    if (!removedSection) return std::nullopt;
-    RemovedSection removed;
-    removed.project = projectId;
-    removed.section = *removedSection;
-    for (Task &task : m_tasks) {
-        if (task.sectionId && *task.sectionId == id) {
-            task.sectionId.reset();
-            task.touch(now);
-            removed.tasks.append(task.id);
+    for (int i = 0; i < m_sections.size(); ++i) {
+        if (m_sections.at(i).id != id) continue;
+        RemovedSection removed;
+        removed.section = m_sections.takeAt(i);
+        removed.project = removed.section.projectId;
+        markDeleted(RecordKind::Section, id, now);
+        for (Task &task : m_tasks) {
+            if (task.sectionId && *task.sectionId == id) {
+                task.sectionId.reset();
+                task.touch(now);
+                removed.tasks.append(task.id);
+            }
         }
+        return removed;
     }
-    return removed;
+    return std::nullopt;
 }
 
 void Store::restoreSection(const RemovedSection &removed, const QDateTime &now) {
-    Project *owner = projectMut(removed.project);
-    if (!owner) return;
-    owner->restoreSection(removed.section);
+    if (!project(removed.project)) return;
+    // Keeps its own key, so an undone deletion lands back where it was.
+    unmark(RecordKind::Section, removed.section.id);
+    m_sections.append(removed.section);
     for (Task &task : m_tasks) {
-        // A task moved to another project in the meantime keeps its new home.
         if (task.projectId == removed.project && removed.tasks.contains(task.id)) {
             task.sectionId = removed.section.id;
             task.touch(now);
@@ -243,30 +400,30 @@ void Store::restoreSection(const RemovedSection &removed, const QDateTime &now) 
     }
 }
 
-bool Store::renameSection(const SectionId &id, const QString &name) {
-    const auto found = section(id);
-    if (!found.first) return false;
-    Section *target = projectMut(found.first->id)->sectionMut(id);
+bool Store::renameSection(const SectionId &id, const QString &name, const QDateTime &now) {
+    Section *target = sectionMut(id);
     if (!target) return false;
     target->name = name;
+    target->touch(now);
     return true;
 }
 
-bool Store::moveSection(const SectionId &id, int index) {
-    const auto found = section(id);
-    if (!found.first) return false;
-    Project *owner = projectMut(found.first->id);
-    QList<SectionId> order;
-    for (const Section *s : owner->sectionsOrdered())
-        if (s->id != id) order.append(s->id);
-    index = std::clamp(index, 0, static_cast<int>(order.size()));
-    order.insert(index, id);
-    for (int position = 0; position < order.size(); ++position)
-        if (Section *s = owner->sectionMut(order.at(position))) s->order = position;
+bool Store::moveSection(const SectionId &id, int index, const QDateTime &now) {
+    const Section *moving = section(id);
+    if (!moving) return false;
+    QStringList neighbours;
+    for (const Section *s : sectionsIn(moving->projectId))
+        if (s->id != id) neighbours << s->order;
+    index = std::clamp(index, 0, static_cast<int>(neighbours.size()));
+    const QString before = index > 0 ? neighbours.at(index - 1) : QString();
+    const QString after = index < neighbours.size() ? neighbours.at(index) : QString();
+    Section *target = sectionMut(id);
+    target->order = order::between(before, after);
+    target->touch(now);
     return true;
 }
 
-// --- labels ------------------------------------------------------------------
+// --- labels ----------------------------------------------------------------------
 
 const Label *Store::label(const LabelId &id) const {
     for (const Label &label : m_labels)
@@ -286,12 +443,14 @@ const Label *Store::labelByName(const QString &name) const {
     return nullptr;
 }
 
-LabelId Store::labelForName(const QString &name) {
+LabelId Store::labelForName(const QString &name, const QDateTime &now) {
     if (const Label *existing = labelByName(name)) return existing->id;
     QList<Color> used;
     for (const Label &label : m_labels) used.append(label.color);
     Label label = Label::create(name, leastUsedColor(used));
     label.order = static_cast<int>(m_labels.size());
+    label.touch(now);
+    unmark(RecordKind::Label, label.id);
     m_labels.append(label);
     return label.id;
 }
@@ -300,6 +459,7 @@ std::optional<Label> Store::removeLabel(const LabelId &id, const QDateTime &now)
     for (int i = 0; i < m_labels.size(); ++i) {
         if (m_labels.at(i).id != id) continue;
         const Label removed = m_labels.takeAt(i);
+        markDeleted(RecordKind::Label, id, now);
         for (Task &task : m_tasks) {
             if (task.hasLabel(id)) {
                 task.removeLabel(id);
@@ -320,7 +480,7 @@ QHash<LabelId, int> Store::labelCounts() const {
     return counts;
 }
 
-// --- saved filters -----------------------------------------------------------
+// --- saved filters ---------------------------------------------------------------
 
 const SavedFilter *Store::filter(const FilterId &id) const {
     for (const SavedFilter &filter : m_filters)
@@ -338,25 +498,31 @@ QList<const SavedFilter *> Store::filtersOrdered() const {
     return ordered;
 }
 
-FilterId Store::putFilter(const SavedFilter &filter) {
+FilterId Store::putFilter(SavedFilter filter, const QDateTime &now) {
+    filter.touch(now);
+    // The undo path as well as the create path, so a deleted filter comes back here.
+    unmark(RecordKind::Filter, filter.id);
     for (SavedFilter &existing : m_filters) {
         if (existing.id == filter.id) {
             existing = filter;
             return filter.id;
         }
     }
-    SavedFilter added = filter;
     int max = -1;
     bool any = false;
     for (const SavedFilter &existing : m_filters) { max = any ? std::max(max, existing.order) : existing.order; any = true; }
-    added.order = any ? max + 1 : 0;
-    m_filters.append(added);
-    return added.id;
+    filter.order = any ? max + 1 : 0;
+    m_filters.append(filter);
+    return filter.id;
 }
 
-std::optional<SavedFilter> Store::removeFilter(const FilterId &id) {
-    for (int i = 0; i < m_filters.size(); ++i)
-        if (m_filters.at(i).id == id) return m_filters.takeAt(i);
+std::optional<SavedFilter> Store::removeFilter(const FilterId &id, const QDateTime &now) {
+    for (int i = 0; i < m_filters.size(); ++i) {
+        if (m_filters.at(i).id != id) continue;
+        const SavedFilter removed = m_filters.takeAt(i);
+        markDeleted(RecordKind::Filter, id, now);
+        return removed;
+    }
     return std::nullopt;
 }
 
@@ -366,7 +532,7 @@ Color Store::nextFilterColor() const {
     return leastUsedColor(used);
 }
 
-// --- tasks -------------------------------------------------------------------
+// --- tasks -----------------------------------------------------------------------
 
 const Task *Store::task(const TaskId &id) const {
     for (const Task &task : m_tasks)
@@ -381,25 +547,20 @@ Task *Store::taskMut(const TaskId &id) {
 }
 
 TaskId Store::addTask(Task task) {
-    int max = -1;
-    bool any = false;
-    for (const Task &existing : m_tasks) {
-        if (existing.projectId == task.projectId && existing.sectionId == task.sectionId) {
-            max = any ? std::max(max, existing.order) : existing.order;
-            any = true;
-        }
-    }
-    task.order = any ? max + 1 : 0;
+    QString last;
+    for (const Task &existing : m_tasks)
+        if (existing.projectId == task.projectId && existing.sectionId == task.sectionId && (last.isEmpty() || order::compare(existing.order, last) > 0))
+            last = existing.order;
+    task.order = order::between(last, QString());
+    unmark(RecordKind::Task, task.id);
     m_tasks.append(task);
     return task.id;
 }
 
 Vocabulary Store::vocabulary() const {
     Vocabulary vocabulary;
-    for (const Project &project : m_projects) {
-        vocabulary.projects << project.name;
-        for (const Section &section : project.sections) vocabulary.sections << section.name;
-    }
+    for (const Project &project : m_projects) vocabulary.projects << project.name;
+    for (const Section &section : m_sections) vocabulary.sections << section.name;
     for (const Label &label : m_labels) vocabulary.labels << label.name;
     return vocabulary;
 }
@@ -410,26 +571,19 @@ TaskId Store::addFromQuickAdd(const QuickAdd &parsed, const ProjectId &defaultPr
     if (parsed.project) {
         if (const Project *named = projectByName(*parsed.project)) projectId = named->id;
     }
-    if (projectId.isEmpty()) {
-        // A default pointing at a project that has since been deleted must not
-        // strand the task somewhere invisible.
-        projectId = project(defaultProject) ? defaultProject : inboxId();
-    }
+    if (projectId.isEmpty()) projectId = project(defaultProject) ? defaultProject : inboxId();
 
     std::optional<SectionId> sectionId;
-    const Project *owner = project(projectId);
     if (parsed.section) {
-        if (owner) {
-            for (const Section &section : owner->sections)
-                if (section.name.compare(*parsed.section, Qt::CaseInsensitive) == 0) sectionId = section.id;
-        }
+        for (const Section *section : sectionsIn(projectId))
+            if (section->name.compare(*parsed.section, Qt::CaseInsensitive) == 0) sectionId = section->id;
     } else if (defaultSection && !parsed.project) {
         // A default section only applies in its own project.
-        if (owner && owner->section(*defaultSection)) sectionId = defaultSection;
+        if (const Section *s = section(*defaultSection); s && s->projectId == projectId) sectionId = defaultSection;
     }
 
     QList<LabelId> labels;
-    for (const QString &name : parsed.labels) labels.append(labelForName(name));
+    for (const QString &name : parsed.labels) labels.append(labelForName(name, now));
 
     Task task = Task::create(projectId, parsed.title.trimmed(), now);
     task.sectionId = sectionId;
@@ -440,52 +594,45 @@ TaskId Store::addFromQuickAdd(const QuickAdd &parsed, const ProjectId &defaultPr
     return addTask(task);
 }
 
+static bool byOrder(const Task *a, const Task *b) {
+    const int c = order::compare(a->order, b->order);
+    if (c != 0) return c < 0;
+    if (a->addedAt != b->addedAt) return a->addedAt < b->addedAt;
+    return a->id < b->id;
+}
+
 QList<const Task *> Store::tasksIn(const ProjectId &project, const std::optional<SectionId> &section) const {
     QList<const Task *> tasks;
     for (const Task &task : m_tasks)
         if (!task.parentId && task.projectId == project && task.sectionId == section) tasks.append(&task);
-    std::stable_sort(tasks.begin(), tasks.end(), [](const Task *a, const Task *b) {
-        if (a->order != b->order) return a->order < b->order;
-        return a->addedAt < b->addedAt;
-    });
+    std::stable_sort(tasks.begin(), tasks.end(), byOrder);
     return tasks;
 }
 
-// Renumbering is bookkeeping, not an edit, so `updated_at` is left alone.
-void Store::renumber(const QList<TaskId> &ids) {
-    for (int position = 0; position < ids.size(); ++position)
-        if (Task *task = taskMut(ids.at(position))) task->order = position;
-}
-
 bool Store::moveTask(const TaskId &id, const ProjectId &projectId, const std::optional<SectionId> &sectionId, int index, const QDateTime &now) {
-    const Task *moving = task(id);
-    if (!moving || !project(projectId)) return false;
-    if (sectionId && !project(projectId)->section(*sectionId)) return false;
-
-    const ProjectId previousProject = moving->projectId;
-    const std::optional<SectionId> previousSection = moving->sectionId;
-    // A dragged task takes its subtasks with it.
+    if (!task(id) || !project(projectId)) return false;
+    if (sectionId) {
+        const Section *s = section(*sectionId);
+        if (!s || s->projectId != projectId) return false;
+    }
     const QList<TaskId> family = taskAndDescendants(id);
-
-    QList<TaskId> order;
+    QStringList neighbours;
     for (const Task *other : tasksIn(projectId, sectionId))
-        if (other->id != id) order.append(other->id);
-    index = std::clamp(index, 0, static_cast<int>(order.size()));
-    order.insert(index, id);
-
+        if (other->id != id) neighbours << other->order;
+    index = std::clamp(index, 0, static_cast<int>(neighbours.size()));
+    const QString landed = order::between(index > 0 ? neighbours.at(index - 1) : QString(), index < neighbours.size() ? neighbours.at(index) : QString());
     for (const TaskId &member : family) {
         if (Task *t = taskMut(member)) {
             t->projectId = projectId;
-            if (member == id) t->sectionId = sectionId;
+            if (member == id) {
+                t->sectionId = sectionId;
+                t->order = landed;
+            }
             t->touch(now);
         }
     }
-    renumber(order);
-    if (previousProject != projectId || previousSection != sectionId) {
-        QList<TaskId> vacated;
-        for (const Task *other : tasksIn(previousProject, previousSection)) vacated.append(other->id);
-        renumber(vacated);
-    }
+    // Nothing to do about the list it came from: a key says where a task sits
+    // relative to its neighbours, not how many there are.
     return true;
 }
 
@@ -493,7 +640,7 @@ QList<const Task *> Store::subtasks(const TaskId &parent) const {
     QList<const Task *> children;
     for (const Task &task : m_tasks)
         if (task.parentId && *task.parentId == parent) children.append(&task);
-    std::stable_sort(children.begin(), children.end(), [](const Task *a, const Task *b) { return a->order < b->order; });
+    std::stable_sort(children.begin(), children.end(), byOrder);
     return children;
 }
 
@@ -505,12 +652,19 @@ QList<TaskId> Store::taskAndDescendants(const TaskId &root) const {
     return found;
 }
 
-QList<Task> Store::removeTask(const TaskId &id) {
+QList<Task> Store::removeTask(const TaskId &id, const QDateTime &now) {
     const QList<TaskId> doomed = taskAndDescendants(id);
-    return extract(m_tasks, [&](const Task &t) { return doomed.contains(t.id); });
+    const QList<Task> removed = extract(m_tasks, [&](const Task &t) { return doomed.contains(t.id); });
+    // Every subtask by name: replaying "the parent went" elsewhere would leave
+    // the children orphaned rather than gone.
+    for (const Task &t : removed) markDeleted(RecordKind::Task, t.id, now);
+    return removed;
 }
 
-void Store::restoreTasks(const QList<Task> &tasks) { m_tasks.append(tasks); }
+void Store::restoreTasks(const QList<Task> &tasks) {
+    for (const Task &t : tasks) unmark(RecordKind::Task, t.id);
+    m_tasks.append(tasks);
+}
 
 std::optional<Completion> Store::completeTask(const TaskId &id, const QDateTime &now, const QDate &today) {
     const QList<TaskId> affected = taskAndDescendants(id);
