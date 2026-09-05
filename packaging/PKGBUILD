@@ -1,0 +1,20 @@
+# Maintainer: matthew
+pkgname=planner
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A keyboard-driven task planner for Omarchy"
+arch=('x86_64')
+url="https://github.com/matthew/planner"
+license=('MIT')
+depends=('hicolor-icon-theme' 'qt6-base' 'qt6-declarative' 'xdg-desktop-portal')
+makedepends=('cmake' 'ninja')
+source=()
+
+build() {
+  cmake -S "$startdir" -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build build
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+}

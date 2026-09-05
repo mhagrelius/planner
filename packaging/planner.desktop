@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Planner
+Comment=A keyboard-driven task planner for Omarchy
+Exec=planner
+Icon=planner
+Terminal=false
+Categories=Utility;
+StartupWMClass=planner

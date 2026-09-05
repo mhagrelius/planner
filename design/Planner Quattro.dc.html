@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #0b0b12; font-family: 'IBM Plex Sans', sans-serif; }
+  a { color: #cba6f7; } a:hover { color: #b4befe; }
+</style>
+</helmet>
+
+<div style="padding:40px 40px 90px;display:flex;flex-direction:column;gap:16px;background:#0b0b12;min-height:100vh;box-sizing:border-box;color:#cdd6f4">
+
+<div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#a6adc8;white-space:nowrap">planner for omarchy quattro · quickshell / qt 6 · catppuccin mocha · super+t summons it</div>
+
+<!-- ==================== A. TODAY ==================== -->
+<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;margin-top:24px;white-space:nowrap">A — Today. Every row action has a key; nothing is hidden behind a menu.</div>
+<div data-screen-label="A Today" style="width:1240px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box">
+  <div style="border:2px solid #cba6f7;border-radius:14px;background:#1e1e2e;overflow:hidden;display:flex;height:600px">
+
+    <!-- rail -->
+    <div style="width:236px;flex:none;background:#181825;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8">planner</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#9399b2;background:#313244;border-radius:4px;padding:2px 6px">SUPER T</div>
+      </div>
+      <div style="display:flex;flex-direction:column;padding-bottom:8px">
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">1</span>
+          <img src="icons/cd/mail-unread.svg" width="15" height="15" alt="" style="flex:none">
+          <span style="flex:1;min-width:0;color:#bac2de">Inbox</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">9</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px;background:#45475a">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#11111b;background:#cba6f7;border-radius:4px;padding:1px 6px">2</span>
+          <img src="icons/c/view-continuous.svg" width="15" height="15" alt="" style="flex:none">
+          <span style="flex:1;min-width:0;font-weight:500">Today</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#cdd6f4">6</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">3</span>
+          <img src="icons/cd/x-office-calendar.svg" width="15" height="15" alt="" style="flex:none">
+          <span style="flex:1;min-width:0;color:#bac2de">Upcoming</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">2</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">4</span>
+          <img src="icons/cd/view-pin.svg" width="15" height="15" alt="" style="flex:none">
+          <span style="flex:1;min-width:0;color:#bac2de">Pinned</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">5</span>
+          <img src="icons/cd/object-select.svg" width="15" height="15" alt="" style="flex:none">
+          <span style="flex:1;min-width:0;color:#bac2de">Completed</span>
+        </div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8;padding:16px 16px 6px">projects</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px">
+          <span style="width:7px;height:7px;flex:none;border-radius:2px;background:#89b4fa;margin:0 4px"></span>
+          <span style="flex:1;min-width:0;color:#bac2de">Work</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">4</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px 9px 28px;margin:0 8px 2px;border-radius:8px">
+          <span style="width:7px;height:7px;flex:none;border-radius:2px;background:#94e2d5;margin:0 4px"></span>
+          <span style="flex:1;min-width:0;color:#bac2de">Admin</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px">
+          <span style="width:7px;height:7px;flex:none;border-radius:2px;background:#a6e3a1;margin:0 4px"></span>
+          <span style="flex:1;min-width:0;color:#bac2de">Home</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- list -->
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:baseline;gap:14px;padding:18px 20px 12px">
+        <div style="font-size:20px;font-weight:600;letter-spacing:-.01em">Today</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">due: today | overdue</div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;gap:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">
+          <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">ctrl+n</span> add</span>
+          <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">ctrl+f</span> find</span>
+          <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">ctrl+k</span> palette</span>
+        </div>
+      </div>
+
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;background:#313244;box-shadow:inset 2px 0 0 #cba6f7">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #f38ba8;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0">Email Sam about the lease</span>
+          <sc-if value="{{ keyHints }}" hint-placeholder-val="{{ true }}">
+            <span style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8;white-space:nowrap">
+              <span><span style="color:#cdd6f4;background:#45475a;border-radius:4px;padding:1px 6px">space</span> done</span>
+              <span><span style="color:#cdd6f4;background:#45475a;border-radius:4px;padding:1px 6px">enter</span> open</span>
+              <span><span style="color:#cdd6f4;background:#45475a;border-radius:4px;padding:1px 6px">ctrl+d</span> date</span>
+            </span>
+          </sc-if>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#45475a;border-radius:4px;padding:1px 6px;white-space:nowrap">@email</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap;width:104px;text-align:right">Today 09:00</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #fab387;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0">Renew the parking permit</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap;width:104px;text-align:right">Today</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0">Water the plants</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">every! 10 days</span>
+          <img src="icons/cd/media-playlist-repeat.svg" width="14" height="14" alt="" style="flex:none">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap;width:104px;text-align:right">Today</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #89b4fa;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0">Pay the electricity bill</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#f38ba8;white-space:nowrap;width:104px;text-align:right">Yesterday</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #f38ba8;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0">File the tax return</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#f38ba8;white-space:nowrap">Due 3 Sep</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#f38ba8;white-space:nowrap;width:104px;text-align:right">Yesterday</span>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #fab387;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0">Move house</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">1 of 2</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">Due 14 Sep</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:1px 6px;white-space:nowrap">@errand</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:1px 6px;white-space:nowrap">@home</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap;width:104px;text-align:right">Today 09:00</span>
+        </div>
+      </div>
+
+      <sc-if value="{{ statusLine }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:none;height:30px;display:flex;align-items:stretch;background:#181825;border-top:1px solid #313244;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">
+          <div style="display:flex;align-items:center;padding:0 14px 0 16px;color:#bac2de">today</div>
+          <div style="display:flex;align-items:center;padding:0 12px">6 tasks · 2 overdue</div>
+          <div style="flex:1"></div>
+          <div style="display:flex;align-items:center;padding:0 14px;color:#a6adc8">↑↓ move · ctrl+b rail · ctrl+k palette · esc close</div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== B. DETAIL ==================== -->
+<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;margin-top:24px;white-space:nowrap">B — Enter opens the task. The pane takes the right third; the list keeps its place.</div>
+<div data-screen-label="B Detail pane" style="width:1240px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box">
+  <div style="border:2px solid #cba6f7;border-radius:14px;background:#1e1e2e;overflow:hidden;display:flex;height:640px">
+    <div style="width:236px;flex:none;background:#181825;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8">planner</div>
+      </div>
+      <div style="display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px;background:#45475a"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#11111b;background:#cba6f7;border-radius:4px;padding:1px 6px">2</span><img src="icons/c/view-continuous.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;font-weight:500">Today</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px">6</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">3</span><img src="icons/cd/x-office-calendar.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;color:#bac2de">Upcoming</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">2</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">4</span><img src="icons/cd/view-pin.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;color:#bac2de">Pinned</span></div>
+      </div>
+    </div>
+
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:baseline;gap:14px;padding:18px 20px 12px">
+        <div style="font-size:20px;font-weight:600">Today</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">due: today | overdue</div>
+      </div>
+      <div style="flex:1;min-height:0">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px"><span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #f38ba8;box-sizing:border-box"></span><span style="flex:1;min-width:0">Email Sam about the lease</span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap">Today 09:00</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px"><span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #fab387;box-sizing:border-box"></span><span style="flex:1;min-width:0">Renew the parking permit</span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap">Today</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;background:#313244;box-shadow:inset 2px 0 0 #cba6f7"><span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #fab387;box-sizing:border-box"></span><span style="flex:1;min-width:0">Move house</span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap">Today 09:00</span></div>
+      </div>
+      <div style="flex:none;height:30px;display:flex;align-items:stretch;background:#181825;border-top:1px solid #313244;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">
+        <div style="display:flex;align-items:center;padding:0 14px 0 16px;color:#bac2de">Move house</div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;padding:0 14px;color:#a6adc8">tab fields · ctrl+d schedule · ctrl+shift+p pin · del delete · esc back</div>
+      </div>
+    </div>
+
+    <!-- detail pane -->
+    <div style="width:372px;flex:none;background:#181825;border-left:1px solid #313244;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:10px;padding:16px 18px 12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8;flex:1">task</div>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">ctrl+shift+p pin</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#f38ba8;background:#313244;border-radius:4px;padding:1px 6px">del</span>
+      </div>
+      <div style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:20px;padding:0 18px 18px">
+        <div style="font-size:19px;font-weight:600;line-height:1.35">Move house</div>
+
+        <div style="line-height:1.55;color:#bac2de;font-size:14px">
+          <div>Ring the agent before Friday.</div>
+          <div>Confirm the van booking.</div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:10px;padding-top:4px;border-top:1px solid #313244">
+          <div style="display:flex;align-items:center;gap:10px;padding-top:6px">
+            <img src="icons/cd/x-office-calendar.svg" width="15" height="15" alt="" style="flex:none">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1">Today at 09:00</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <img src="icons/cd/alarm.svg" width="15" height="15" alt="" style="flex:none">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#bac2de">14 Sep</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:15px;display:flex;justify-content:center;flex:none"><span style="width:9px;height:9px;border-radius:3px;border:2px solid #fab387;box-sizing:border-box"></span></span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#fab387">p2 High</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <img src="icons/cd/folder.svg" width="15" height="15" alt="" style="flex:none">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#bac2de">#Inbox</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:1px 6px">@errand</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:1px 6px">@home</span>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;border-top:1px solid #313244">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap;padding-top:6px">1 of 2 done</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:6px 0">
+            <span style="width:18px;height:18px;flex:none;border-radius:5px;background:#a6e3a1;display:flex;align-items:center;justify-content:center"><img src="icons/cc/object-select.svg" width="12" height="12" alt=""></span>
+            <span style="flex:1;color:#9399b2;text-decoration:line-through">Pack the kitchen</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:6px 0">
+            <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span>
+            <span style="flex:1;color:#bac2de">Book a van</span>
+            <img src="icons/cd/go-next.svg" width="14" height="14" alt="" style="flex:none">
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0 0;border-top:1px solid #313244;margin-top:4px">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#11111b;background:#a6e3a1;border-radius:4px;padding:1px 6px">ctrl+enter</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">add a subtask</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== C. PALETTE ==================== -->
+<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;margin-top:24px;white-space:nowrap">C — Ctrl+K opens the palette. Actions, views and tasks in one list, the way Quattro's menu works.</div>
+<div data-screen-label="C Command palette" style="width:1240px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box">
+  <div style="border:2px solid #cba6f7;border-radius:14px;background:#1e1e2e;overflow:hidden;height:600px;position:relative">
+    <div style="position:absolute;inset:0;display:flex;opacity:.35">
+      <div style="width:236px;flex:none;background:#181825"></div>
+      <div style="flex:1;padding:18px 20px;display:flex;flex-direction:column;gap:18px">
+        <div style="font-size:20px;font-weight:600">Today</div>
+        <div style="color:#6c7086">Email Sam about the lease</div>
+        <div style="color:#6c7086">Renew the parking permit</div>
+        <div style="color:#6c7086">Water the plants</div>
+      </div>
+    </div>
+    <div style="position:absolute;inset:0;background:rgba(17,17,27,.72)"></div>
+    <div style="position:absolute;top:64px;left:50%;transform:translateX(-50%);width:660px;background:#1e1e2e;border:1px solid #45475a;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.55);overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid #313244">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#cba6f7">›</span>
+        <span style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:15px">sec</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">4 of 26</span>
+      </div>
+      <div style="padding:8px 0 10px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8;padding:8px 16px 4px">actions</div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:#313244;box-shadow:inset 2px 0 0 #cba6f7">
+          <img src="icons/c/list-add.svg" width="15" height="15" alt="" style="flex:none">
+          <span style="flex:1">Add Section…</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cdd6f4;background:#45475a;border-radius:4px;padding:1px 6px">in #Work</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px">
+          <img src="icons/cd/selection-mode.svg" width="15" height="15" alt="" style="flex:none">
+          <span style="flex:1;color:#bac2de">Select Tasks</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">ctrl+a</span>
+        </div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8;padding:12px 16px 4px">tasks</div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px">
+          <span style="width:15px;display:flex;justify-content:center;flex:none"><span style="width:9px;height:9px;border-radius:3px;border:2px solid #45475a;box-sizing:border-box"></span></span>
+          <span style="flex:1;color:#bac2de">Tidy the shared drive</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">#Work</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 16px">
+          <span style="width:15px;display:flex;justify-content:center;flex:none"><span style="width:9px;height:9px;border-radius:3px;border:2px solid #f38ba8;box-sizing:border-box"></span></span>
+          <span style="flex:1;color:#bac2de">File the tax return</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#f38ba8">Yesterday</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid #313244;background:#181825;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">
+        <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">↑↓</span> move</span>
+        <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">enter</span> run</span>
+        <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">esc</span> dismiss</span>
+        <span style="flex:1"></span>
+        <span>every view is a query — filters live in the same list</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== D. QUICK ADD + QUICK FIND ==================== -->
+<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;margin-top:24px;white-space:nowrap">D — Ctrl+N adds, Ctrl+F finds. Same shell, different prompt sigil.</div>
+<div style="display:flex;gap:20px;flex-wrap:wrap">
+
+  <div data-screen-label="D1 Quick add" style="width:610px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box">
+    <div style="background:#1e1e2e;border:1px solid #45475a;border-radius:12px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid #313244">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#a6e3a1">+</span>
+        <span style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:15px;line-height:1.5">Email Sam about the lease <span style="color:#cba6f7">#Work</span> <span style="color:#cba6f7">@email</span> <span style="color:#cba6f7">p1</span> <span style="color:#cba6f7">friday 9am</span> <span style="color:#cba6f7">!30m</span><span style="color:#cba6f7">▌</span></span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;padding:14px 16px 10px">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:3px 8px"><img src="icons/cd/folder.svg" width="12" height="12" alt="">Work</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#a6e3a1;background:#313244;border-radius:4px;padding:3px 8px"><img src="icons/cd/x-office-calendar.svg" width="12" height="12" alt="">Fri 09:00</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#f38ba8;background:#313244;border-radius:4px;padding:3px 8px"><img src="icons/cd/emblem-important.svg" width="12" height="12" alt="">Urgent</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:3px 8px"><img src="icons/cd/user-bookmarks.svg" width="12" height="12" alt="">email</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:3px 8px"><img src="icons/cd/alarm.svg" width="12" height="12" alt="">30 minutes before</span>
+      </div>
+      <div style="padding:0 16px 14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8;line-height:1.7">#project&nbsp; /section&nbsp; @label&nbsp; p1–p4&nbsp; !30m&nbsp; — and dates like “friday 9am”, “in 3 days”, “every other monday”</div>
+      <div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid #313244;background:#181825;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">
+        <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">enter</span> add</span>
+        <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">ctrl k</span> keep adding</span>
+        <span style="flex:1"></span>
+        <span>lands in #Work</span>
+      </div>
+    </div>
+  </div>
+
+  <div data-screen-label="D2 Quick find" style="width:610px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box">
+    <div style="background:#1e1e2e;border:1px solid #45475a;border-radius:12px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid #313244">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#89b4fa">/</span>
+        <span style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:15px">the<span style="color:#89b4fa">▌</span></span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">6 hits</span>
+      </div>
+      <div style="padding:6px 0 8px">
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 16px;background:#313244;box-shadow:inset 2px 0 0 #89b4fa">
+          <span style="width:15px;display:flex;justify-content:center;flex:none"><span style="width:9px;height:9px;border-radius:3px;border:2px solid #45475a;box-sizing:border-box"></span></span>
+          <span style="flex:1">Book the dentist</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">#Inbox</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 16px">
+          <span style="width:15px;display:flex;justify-content:center;flex:none"><span style="width:9px;height:9px;border-radius:3px;border:2px solid #45475a;box-sizing:border-box"></span></span>
+          <span style="flex:1;color:#bac2de">Water the plants</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">#Inbox</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 16px">
+          <span style="width:15px;display:flex;justify-content:center;flex:none"><span style="width:9px;height:9px;border-radius:3px;border:2px solid #f38ba8;box-sizing:border-box"></span></span>
+          <span style="flex:1;color:#bac2de">File the tax return</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">#Inbox</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 16px">
+          <span style="width:15px;display:flex;justify-content:center;flex:none"><span style="width:9px;height:9px;border-radius:3px;border:2px solid #45475a;box-sizing:border-box"></span></span>
+          <span style="flex:1;color:#bac2de">Tidy the shared drive</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">#Work</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 16px">
+          <span style="width:15px;display:flex;justify-content:center;flex:none"><span style="width:9px;height:9px;border-radius:3px;border:2px solid #f38ba8;box-sizing:border-box"></span></span>
+          <span style="flex:1;color:#bac2de">Email Sam about the lease</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">#Inbox</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:9px 16px;opacity:.6">
+          <span style="width:15px;display:flex;justify-content:center;flex:none"><span style="width:9px;height:9px;border-radius:3px;background:#45475a"></span></span>
+          <span style="flex:1;color:#9399b2;text-decoration:line-through">Cancel the old broadband</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">#Inbox · completed</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-top:1px solid #313244;background:#181825;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">
+        <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">enter</span> open</span>
+        <span style="flex:1"></span>
+        <span>tasks, projects and labels at once</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== E. PROJECT — SECTIONS ==================== -->
+<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;margin-top:24px;white-space:nowrap">E — A project down the page. Section names are lane headers, not boxes.</div>
+<div data-screen-label="E Project sections" style="width:1240px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box">
+  <div style="border:2px solid #cba6f7;border-radius:14px;background:#1e1e2e;overflow:hidden;display:flex;height:560px">
+    <div style="width:236px;flex:none;background:#181825;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8">planner</div>
+      </div>
+      <div style="display:flex;flex-direction:column;padding-bottom:8px">
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">1</span><img src="icons/cd/mail-unread.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Inbox</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">9</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">2</span><img src="icons/cd/view-continuous.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Today</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">6</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">3</span><img src="icons/cd/x-office-calendar.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Upcoming</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">2</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">4</span><img src="icons/cd/view-pin.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Pinned</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">5</span><img src="icons/cd/object-select.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Completed</span></div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8;padding:16px 16px 6px">projects</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px;background:#45475a"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#89b4fa;margin:0 4px"></span><span style="flex:1;min-width:0;color:#cdd6f4;font-weight:500">Work</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#cdd6f4;white-space:nowrap">4</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px 9px 28px;margin:0 8px 2px;border-radius:8px"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#94e2d5;margin:0 4px"></span><span style="flex:1;min-width:0;color:#bac2de">Admin</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#a6e3a1;margin:0 4px"></span><span style="flex:1;min-width:0;color:#bac2de">Home</span></div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:baseline;gap:14px;padding:18px 20px 10px">
+        <div style="font-size:20px;font-weight:600">Work</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">0 of 4 done</div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;gap:2px;padding:2px;border-radius:8px;background:#181825">
+          <span style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:6px;background:#313244;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cdd6f4"><img src="icons/c/view-list.svg" width="13" height="13" alt="">list</span>
+          <span style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2"><img src="icons/cd/view-grid.svg" width="13" height="13" alt="">board</span>
+        </div>
+      </div>
+      <div style="flex:1;min-height:0">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px"><span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span><span style="flex:1">Tidy the shared drive</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:18px 20px 8px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#bac2de">in progress</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">2</div>
+          <div style="flex:1;height:1px;background:#313244"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px"><span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #f38ba8;box-sizing:border-box"></span><span style="flex:1">Draft the Q3 report</span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#bac2de;white-space:nowrap">Tomorrow</span></div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px"><span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span><span style="flex:1">Review the contract</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:1px 6px">@legal</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:18px 20px 8px">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#bac2de">blocked</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">1</div>
+          <div style="flex:1;height:1px;background:#313244"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px"><span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #fab387;box-sizing:border-box"></span><span style="flex:1">Chase the supplier</span></div>
+      </div>
+      <div style="flex:none;height:30px;display:flex;align-items:stretch;background:#181825;border-top:1px solid #313244;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">
+        <div style="display:flex;align-items:center;padding:0 14px 0 16px;color:#bac2de">#Work</div>
+        <div style="display:flex;align-items:center;padding:0 12px">3 sections</div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;padding:0 14px;color:#a6adc8">ctrl+shift+b board · ctrl+shift+n new section · ctrl+↑↓ move task</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== F. BOARD ==================== -->
+<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;margin-top:24px;white-space:nowrap">F — Ctrl+Shift+B turns the same sections sideways. Columns are drop targets; Ctrl+←→ moves a task between them.</div>
+<div data-screen-label="F Project board" style="width:1240px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box">
+  <div style="border:2px solid #cba6f7;border-radius:14px;background:#1e1e2e;overflow:hidden;display:flex;height:560px">
+    <div style="width:236px;flex:none;background:#181825;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8">planner</div>
+      </div>
+      <div style="display:flex;flex-direction:column;padding-bottom:8px">
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">1</span><img src="icons/cd/mail-unread.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Inbox</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">9</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">2</span><img src="icons/cd/view-continuous.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Today</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">6</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">3</span><img src="icons/cd/x-office-calendar.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Upcoming</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">2</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">4</span><img src="icons/cd/view-pin.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Pinned</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">5</span><img src="icons/cd/object-select.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Completed</span></div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8;padding:16px 16px 6px">projects</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px;background:#45475a"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#89b4fa;margin:0 4px"></span><span style="flex:1;min-width:0;color:#cdd6f4;font-weight:500">Work</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#cdd6f4;white-space:nowrap">4</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px 9px 28px;margin:0 8px 2px;border-radius:8px"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#94e2d5;margin:0 4px"></span><span style="flex:1;min-width:0;color:#bac2de">Admin</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#a6e3a1;margin:0 4px"></span><span style="flex:1;min-width:0;color:#bac2de">Home</span></div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:baseline;gap:14px;padding:18px 20px 10px">
+        <div style="font-size:20px;font-weight:600">Work</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">0 of 4 done</div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;gap:2px;padding:2px;border-radius:8px;background:#181825">
+          <span style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2"><img src="icons/cd/view-list.svg" width="13" height="13" alt="">list</span>
+          <span style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:6px;background:#313244;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#cdd6f4"><img src="icons/c/view-grid.svg" width="13" height="13" alt="">board</span>
+        </div>
+      </div>
+      <div style="flex:1;min-height:0;display:flex;gap:14px;padding:6px 20px 20px">
+        <div style="flex:1;min-width:0;background:#181825;border:1px solid #313244;border-radius:10px;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 14px 10px;border-bottom:1px solid #313244">
+            <div style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#bac2de">no section</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">1</div>
+          </div>
+          <div style="padding:8px">
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 10px;background:#1e1e2e;border-radius:8px"><span style="width:16px;height:16px;flex:none;margin-top:2px;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span><span style="flex:1;font-size:14px;line-height:1.4">Tidy the shared drive</span></div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0;background:#181825;border:1px solid #45475a;border-radius:10px;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 14px 10px;border-bottom:1px solid #313244">
+            <div style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#cdd6f4">in progress</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">2</div>
+          </div>
+          <div style="padding:8px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:10px;background:#313244;border-radius:8px;outline:1px solid #cba6f7;outline-offset:-1px">
+              <span style="width:16px;height:16px;flex:none;margin-top:2px;border-radius:5px;border:2px solid #f38ba8;box-sizing:border-box"></span>
+              <span style="flex:1;font-size:14px;line-height:1.4">Draft the Q3 report<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;margin-top:4px">Tomorrow</div></span>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:10px;background:#1e1e2e;border-radius:8px">
+              <span style="width:16px;height:16px;flex:none;margin-top:2px;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span>
+              <span style="flex:1;font-size:14px;line-height:1.4">Review the contract<div style="margin-top:6px"><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:1px 6px">@legal</span></div></span>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0;background:#181825;border:1px solid #313244;border-radius:10px;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 14px 10px;border-bottom:1px solid #313244">
+            <div style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#bac2de">blocked</div>
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">1</div>
+          </div>
+          <div style="padding:8px">
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:10px;background:#1e1e2e;border-radius:8px"><span style="width:16px;height:16px;flex:none;margin-top:2px;border-radius:5px;border:2px solid #fab387;box-sizing:border-box"></span><span style="flex:1;font-size:14px;line-height:1.4">Chase the supplier</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:none;height:30px;display:flex;align-items:stretch;background:#181825;border-top:1px solid #313244;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">
+        <div style="display:flex;align-items:center;padding:0 14px 0 16px;color:#bac2de">#Work · board</div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;padding:0 14px;color:#a6adc8">←→ column · ctrl+←→ move task · ctrl+shift+b list</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== G. SELECT MODE ==================== -->
+<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;margin-top:24px;white-space:nowrap">G — Ctrl+A or a click on a checkbox starts a selection. The status line becomes the action bar; nothing slides in from the bottom.</div>
+<div data-screen-label="G Select mode" style="width:1240px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box">
+  <div style="border:2px solid #f9e2af;border-radius:14px;background:#1e1e2e;overflow:hidden;display:flex;height:600px">
+    <div style="width:236px;flex:none;background:#181825;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8">planner</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#11111b;background:#f9e2af;border-radius:4px;padding:2px 6px">2 SELECTED</div>
+      </div>
+      <div style="display:flex;flex-direction:column;padding-bottom:8px">
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">1</span><img src="icons/cd/mail-unread.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Inbox</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">9</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px;background:#45475a"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#11111b;background:#f9e2af;border-radius:4px;padding:1px 6px">2</span><img src="icons/c/view-continuous.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;font-weight:500">Today</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#cdd6f4;white-space:nowrap">6</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">3</span><img src="icons/cd/x-office-calendar.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Upcoming</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">2</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">4</span><img src="icons/cd/view-pin.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Pinned</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">5</span><img src="icons/cd/object-select.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Completed</span></div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8;padding:16px 16px 6px">projects</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#89b4fa;margin:0 4px"></span><span style="flex:1;min-width:0;color:#bac2de">Work</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">4</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px 9px 28px;margin:0 8px 2px;border-radius:8px"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#94e2d5;margin:0 4px"></span><span style="flex:1;min-width:0;color:#bac2de">Admin</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#a6e3a1;margin:0 4px"></span><span style="flex:1;min-width:0;color:#bac2de">Home</span></div>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:baseline;gap:14px;padding:18px 20px 12px">
+        <div style="font-size:20px;font-weight:600;letter-spacing:-.01em">Today</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">due: today | overdue</div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;gap:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8">
+          <span><span style="color:#11111b;background:#f9e2af;border-radius:4px;padding:1px 6px">ctrl+a</span> all</span>
+          <span><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">esc</span> clear</span>
+        </div>
+      </div>
+      <div style="flex:1;min-height:0">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;background:#313244">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:#f9e2af;display:flex;align-items:center;justify-content:center"><img src="icons/cc/object-select.svg" width="12" height="12" alt=""></span>
+          <span style="flex:1;min-width:0">Email Sam about the lease</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#45475a;border-radius:4px;padding:1px 6px;white-space:nowrap">@email</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap;width:104px;text-align:right">Today 09:00</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;background:#313244">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:#f9e2af;display:flex;align-items:center;justify-content:center"><img src="icons/cc/object-select.svg" width="12" height="12" alt=""></span>
+          <span style="flex:1;min-width:0">Renew the parking permit</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap;width:104px;text-align:right">Today</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;outline:1px solid #f9e2af;outline-offset:-1px">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0;color:#bac2de">Water the plants</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">every! 10 days</span>
+          <img src="icons/cd/media-playlist-repeat.svg" width="14" height="14" alt="" style="flex:none">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap;width:104px;text-align:right">Today</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0;color:#bac2de">Pay the electricity bill</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#f38ba8;white-space:nowrap;width:104px;text-align:right">Yesterday</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0;color:#bac2de">File the tax return</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#f38ba8;white-space:nowrap">Due 3 Sep</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#f38ba8;white-space:nowrap;width:104px;text-align:right">Yesterday</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 20px">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;border:2px solid #45475a;box-sizing:border-box"></span>
+          <span style="flex:1;min-width:0;color:#bac2de">Move house</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">1 of 2</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">Due 14 Sep</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:1px 6px;white-space:nowrap">@errand</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#bac2de;background:#313244;border-radius:4px;padding:1px 6px;white-space:nowrap">@home</span>
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6e3a1;white-space:nowrap;width:104px;text-align:right">Today 09:00</span>
+        </div>
+      </div>
+      <div style="flex:none;height:30px;display:flex;align-items:stretch;background:#181825;border-top:1px solid #313244;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">
+        <div style="display:flex;align-items:center;padding:0 14px 0 16px;color:#bac2de">2 tasks selected</div>
+        <div style="flex:1"></div>
+        <div style="display:flex;align-items:center;gap:14px;padding:0 14px">
+          <span><span style="color:#11111b;background:#a6e3a1;border-radius:4px;padding:1px 6px">space</span> complete</span>
+          <span><span style="color:#cdd6f4;background:#45475a;border-radius:4px;padding:1px 6px">ctrl+d</span> schedule</span>
+          <span><span style="color:#cdd6f4;background:#45475a;border-radius:4px;padding:1px 6px">ctrl+1-4</span> priority</span>
+          <span><span style="color:#11111b;background:#f38ba8;border-radius:4px;padding:1px 6px">del</span> delete</span>
+          <span><span style="color:#cdd6f4;background:#45475a;border-radius:4px;padding:1px 6px">ctrl+z</span> undo</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== H. EMPTY + DATE PICKER ==================== -->
+<div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;margin-top:24px;white-space:nowrap">H — An empty view still says what it is for. Ctrl+D opens the date picker, with the repeat phrase in a box.</div>
+<div style="display:flex;gap:20px;align-items:stretch;flex-wrap:wrap">
+
+  <div data-screen-label="H1 Empty state" style="width:740px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box">
+    <div style="border:2px solid #cba6f7;border-radius:14px;background:#1e1e2e;overflow:hidden;display:flex;height:400px">
+      <div style="width:222px;flex:none;background:#181825;display:flex;flex-direction:column">
+        <div style="padding:16px 16px 12px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8">planner</div>
+        <div style="display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">1</span><img src="icons/cd/mail-unread.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Inbox</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">9</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">2</span><img src="icons/cd/view-continuous.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Today</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">6</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">3</span><img src="icons/cd/x-office-calendar.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Upcoming</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">2</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px;background:#45475a"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#11111b;background:#cba6f7;border-radius:4px;padding:1px 6px">4</span><img src="icons/c/view-pin.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#cdd6f4;font-weight:500">Pinned</span></div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9399b2;background:#313244;border-radius:4px;padding:1px 6px">5</span><img src="icons/cd/object-select.svg" width="15" height="15" alt="" style="flex:none"><span style="flex:1;min-width:0;color:#bac2de">Completed</span></div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#a6adc8;padding:14px 16px 6px">projects</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;margin:0 8px 2px;border-radius:8px"><span style="width:7px;height:7px;flex:none;border-radius:2px;background:#89b4fa;margin:0 4px"></span><span style="flex:1;min-width:0;color:#bac2de">Work</span><span style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">4</span></div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:baseline;gap:14px;padding:18px 20px 10px">
+          <div style="font-size:20px;font-weight:600">Pinned</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">pinned</div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px">
+          <img src="icons/cd/view-pin.svg" width="44" height="44" alt="" style="opacity:.5">
+          <div style="font-size:18px;font-weight:600">Nothing pinned</div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6adc8;text-align:center">Pin a task to keep it in reach.</div>
+          <div style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8;margin-top:6px"><span style="color:#cdd6f4;background:#313244;border-radius:4px;padding:1px 6px">ctrl+shift+p</span> pins whatever the cursor is on</div>
+        </div>
+        <div style="flex:none;height:30px;display:flex;align-items:stretch;background:#181825;border-top:1px solid #313244;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#9399b2;white-space:nowrap">
+          <div style="display:flex;align-items:center;padding:0 14px 0 16px;color:#bac2de">pinned</div>
+          <div style="display:flex;align-items:center;padding:0 12px">0 tasks</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div data-screen-label="H2 Date picker" style="width:460px;flex:none;background:#11111b;padding:16px;border-radius:10px;box-sizing:border-box;display:flex;align-items:center;justify-content:center">
+    <div style="width:340px;background:#1e1e2e;border:1px solid #45475a;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.55);padding:14px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;gap:10px;background:#181825;border:1px solid #313244;border-radius:8px;padding:8px 10px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:#cba6f7">›</span>
+        <span style="flex:1;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#a6adc8">next friday, in 3 days…</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:12px">
+        <span style="padding:5px 10px;border-radius:6px;background:#313244;color:#cdd6f4">Today</span>
+        <span style="padding:5px 10px;border-radius:6px;background:#313244;color:#bac2de">Tomorrow</span>
+        <span style="padding:5px 10px;border-radius:6px;background:#313244;color:#bac2de">Next week</span>
+        <span style="padding:5px 10px;border-radius:6px;background:#313244;color:#9399b2">No date</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:13px">
+        <img src="icons/cd/pan-start.svg" width="14" height="14" alt="">
+        <div style="flex:1;text-align:center;color:#cdd6f4">September 2026</div>
+        <img src="icons/cd/pan-end.svg" width="14" height="14" alt="">
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-family:'IBM Plex Mono',monospace;font-size:12px;text-align:center">
+        <div style="color:#9399b2;padding:4px 0">M</div><div style="color:#9399b2;padding:4px 0">T</div><div style="color:#9399b2;padding:4px 0">W</div><div style="color:#9399b2;padding:4px 0">T</div><div style="color:#9399b2;padding:4px 0">F</div><div style="color:#9399b2;padding:4px 0">S</div><div style="color:#9399b2;padding:4px 0">S</div>
+        <div style="color:#45475a;padding:5px 0">31</div><div style="color:#bac2de;padding:5px 0">1</div><div style="color:#bac2de;padding:5px 0">2</div><div style="color:#bac2de;padding:5px 0">3</div><div style="color:#bac2de;padding:5px 0">4</div><div style="padding:5px 0;border-radius:6px;background:#cba6f7;color:#11111b">5</div><div style="color:#bac2de;padding:5px 0">6</div>
+        <div style="color:#bac2de;padding:5px 0">7</div><div style="color:#bac2de;padding:5px 0">8</div><div style="color:#bac2de;padding:5px 0">9</div><div style="color:#bac2de;padding:5px 0">10</div><div style="color:#bac2de;padding:5px 0">11</div><div style="color:#bac2de;padding:5px 0">12</div><div style="color:#bac2de;padding:5px 0">13</div>
+        <div style="color:#bac2de;padding:5px 0">14</div><div style="color:#bac2de;padding:5px 0">15</div><div style="color:#bac2de;padding:5px 0">16</div><div style="color:#bac2de;padding:5px 0">17</div><div style="color:#bac2de;padding:5px 0">18</div><div style="color:#bac2de;padding:5px 0">19</div><div style="color:#bac2de;padding:5px 0">20</div>
+        <div style="color:#bac2de;padding:5px 0">21</div><div style="color:#bac2de;padding:5px 0">22</div><div style="color:#bac2de;padding:5px 0">23</div><div style="color:#bac2de;padding:5px 0">24</div><div style="color:#bac2de;padding:5px 0">25</div><div style="color:#bac2de;padding:5px 0">26</div><div style="color:#bac2de;padding:5px 0">27</div>
+        <div style="color:#bac2de;padding:5px 0">28</div><div style="color:#bac2de;padding:5px 0">29</div><div style="color:#bac2de;padding:5px 0">30</div><div style="color:#45475a;padding:5px 0">1</div><div style="color:#45475a;padding:5px 0">2</div><div style="color:#45475a;padding:5px 0">3</div><div style="color:#45475a;padding:5px 0">4</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:12px">
+        <span style="color:#a6adc8;width:52px">time</span>
+        <span style="flex:1;background:#181825;border:1px solid #313244;border-radius:6px;padding:6px 8px;color:#9399b2">09:00</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:12px">
+        <span style="color:#a6adc8;width:52px">repeat</span>
+        <span style="flex:1;background:#181825;border:1px solid #45475a;border-radius:6px;padding:6px 8px;color:#cdd6f4">every! 10 days</span>
+        <img src="icons/cd/edit-clear.svg" width="14" height="14" alt="">
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#a6adc8;line-height:1.6">every! counts from completion. Emptying the box stops the repeat and keeps the date.</div>
+    </div>
+  </div>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1320},&quot;keyHints&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Keyboard&quot;},&quot;statusLine&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Keyboard&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      keyHints: this.props.keyHints ?? true,
+      statusLine: this.props.statusLine ?? true,
+    };
+  }
+}
+</script>
+</body>
+</html>

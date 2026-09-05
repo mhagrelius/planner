@@ -1,4 +1,4 @@
-/target
-/dist
-/.flatpak-build
-/packaging/flatpak/cargo-sources.json
+/build
+/build-core
+/docs/screens/*.png
+*.zip
