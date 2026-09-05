@@ -39,7 +39,7 @@ Rectangle {
                     delegate: Loader {
                         required property var modelData
                         width: parent.width
-                        sourceComponent: modelData.kind === "heading" ? heading : row
+                        sourceComponent: modelData.kind === "heading" ? heading : modelData.kind === "new-project" ? newProject : row
                         property var item: modelData
                     }
                 }
@@ -54,6 +54,26 @@ Rectangle {
             width: parent ? parent.width : 0
             height: T.s(16) + T.s(12) + T.s(6)
             Mono { x: T.s(16); y: T.s(16); text: item.title; px: 10; color: T.hintText; font.capitalization: Font.AllUppercase; font.letterSpacing: T.r(10 * 0.16) }
+        }
+    }
+
+    Component {
+        id: newProject
+        Item {
+            width: parent ? parent.width : 0
+            height: T.s(34) + T.s(2)
+            Rectangle {
+                x: T.s(8); width: parent.width - T.s(16); height: T.s(34)
+                radius: T.s(8)
+                color: addHover.containsMouse ? T.hover : "transparent"
+                MouseArea { id: addHover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: App.newProject() }
+                Row {
+                    anchors.fill: parent; anchors.leftMargin: T.s(12); anchors.rightMargin: T.s(12)
+                    spacing: T.s(10)
+                    Icon { anchors.verticalCenter: parent.verticalCenter; name: "folder-new"; px: 15; tint: addHover.containsMouse ? T.text2 : T.hintText }
+                    Mono { anchors.verticalCenter: parent.verticalCenter; text: "+ " + item.title; px: 12; color: addHover.containsMouse ? T.text2 : T.hintText }
+                }
+            }
         }
     }
 

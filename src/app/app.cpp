@@ -822,6 +822,10 @@ void App::newSection() {
     beginInput(QStringLiteral("new-section"), QStringLiteral("new section in #%1").arg(m_store.project(*view->projectId())->name), QStringLiteral("In progress"), {}, {{QStringLiteral("project"), *view->projectId()}});
 }
 
+void App::newProject() {
+    beginInput(QStringLiteral("new-project"), QStringLiteral("new project"), QStringLiteral("Loft conversion"), {}, {});
+}
+
 // --- the date picker ----------------------------------------------------------------
 
 void App::openDatePicker() {
@@ -1095,6 +1099,8 @@ void App::buildRail() {
     for (const View &view : filters) push(view, QStringLiteral("filter"), 0);
     m_rail.append(QVariantMap{{QStringLiteral("kind"), QStringLiteral("heading")}, {QStringLiteral("title"), QStringLiteral("projects")}});
     for (const View &view : projectViews(m_store)) push(view, QStringLiteral("project"), 0);
+    // The one thing the rail lets you make from here; everything else is a view.
+    m_rail.append(QVariantMap{{QStringLiteral("kind"), QStringLiteral("new-project")}, {QStringLiteral("title"), QStringLiteral("new project")}});
 }
 
 QVariantMap App::row(const Task &task, int lane, int index, int flat) const {

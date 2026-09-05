@@ -162,6 +162,7 @@ public:
     // --- project structure
     Q_INVOKABLE void toggleStyle();
     Q_INVOKABLE void newSection();
+    Q_INVOKABLE void newProject();
 
     // --- the date picker
     Q_INVOKABLE void openDatePicker();

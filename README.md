@@ -87,7 +87,9 @@ the editor says why while you type it.
 
 ### Projects
 
-Projects nest, and each has sections. A project shows as lanes down the page
+Projects nest, and each has sections. A new one comes from the `+ new project`
+row at the end of the rail, or `New Project…` in the palette; `New Subproject…`
+in the palette nests one under the project being looked at. A project shows as lanes down the page
 or as a board of columns (`Ctrl+Shift+B`), remembered per project. Sections
 are added with `Ctrl+Shift+N` and renamed or deleted from the palette;
 deleting one leaves its tasks in the project, and `Ctrl+Z` puts it back.
