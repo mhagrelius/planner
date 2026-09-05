@@ -170,6 +170,17 @@ struct Reminder {
     bool operator==(const Reminder &other) const { return id == other.id && trigger == other.trigger; }
 };
 
+// A dated line of activity on a task: "rang them, waiting on a callback".
+// Append-only in the interface; rides inside the task record so sync carries
+// it with the task and the server never learns a sixth kind.
+struct Note {
+    QDateTime at;
+    QString text;
+    QJsonObject toJson() const;
+    static Note fromJson(const QJsonObject &json);
+    bool operator==(const Note &other) const { return at == other.at && text == other.text; }
+};
+
 // What completing a task did. Ticking a recurring task moves it on rather
 // than finishing it, and the caller needs to know which happened.
 struct Completion {
@@ -189,6 +200,7 @@ struct Task {
     Priority priority = Priority::P4;
     QList<LabelId> labels;
     QList<Reminder> reminders;
+    QList<Note> notes;
     bool pinned = false;
     bool checked = false;
     std::optional<QDateTime> completedAt;

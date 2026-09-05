@@ -62,6 +62,7 @@ Window {
             if (ctrl && event.key === Qt.Key_K) { App.openPrompt("palette"); event.accepted = true; return }
             if (ctrl && event.key === Qt.Key_B) { App.toggleRail(); event.accepted = true; return }
             if (ctrl && event.key === Qt.Key_D) { App.openDatePicker(); event.accepted = true; return }
+            if (ctrl && shift && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) { if (App.openTask.length) detail.focusNote(); event.accepted = true; return }
             if (ctrl && (event.key === Qt.Key_Return || event.key === Qt.Key_Enter)) { if (App.openTask.length) detail.focusSubtask(); event.accepted = true; return }
             if (win.typing) return
             if (ctrl && event.key === Qt.Key_A) { App.selectAll(); event.accepted = true; return }

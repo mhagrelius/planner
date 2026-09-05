@@ -47,9 +47,11 @@ QList<Hit> search(const Store &store, const QString &rawQuery, int limit) {
         }
     }
     for (const Task &task : store.tasks()) {
-        // The description matches too, but never as well as the title.
+        // The description and the notes match too, but never as well as the title.
         const auto title = searchScore(task.content, query);
-        const auto body = searchScore(task.description, query);
+        std::optional<int> body = searchScore(task.description, query);
+        for (const Note &note : task.notes)
+            if (const auto s = searchScore(note.text, query); s && (!body || *s > *body)) body = s;
         std::optional<int> best = title;
         if (!best && body) best = *body / 3;
         if (!best) continue;

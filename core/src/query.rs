@@ -239,6 +239,10 @@ impl Term {
                 let needle = needle.to_lowercase();
                 task.content.to_lowercase().contains(&needle)
                     || task.description.to_lowercase().contains(&needle)
+                    || task
+                        .notes
+                        .iter()
+                        .any(|note| note.text.to_lowercase().contains(&needle))
             }
         }
     }

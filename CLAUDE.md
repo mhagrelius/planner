@@ -53,5 +53,7 @@ skill — read it before changing theming, scaling or packaging.
 - The store is canonical: rows report, `App` mutates and saves. Saving is coalesced
   on a two-second tick through `QSaveFile`; the agent path saves at once.
 - Every view is a query. Nothing below `App` reads the clock: `today` is an argument.
+- A task's `notes` field exists in both cores; a change to the record shape goes
+  into `core/src/task.rs` on `main` as well, or the GTK client drops it on sync.
 - Surface-ramp colours (`T.surface0/1`) are for fills and hairlines, never copy.
 - Record every departure from the handoff in `DECISIONS.md`.

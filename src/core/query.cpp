@@ -93,7 +93,10 @@ static bool termMatches(const Term &term, const Task &task, const Store &store, 
     }
     case Term::Search: {
         const QString needle = term.name.toLower();
-        return task.content.toLower().contains(needle) || task.description.toLower().contains(needle);
+        if (task.content.toLower().contains(needle) || task.description.toLower().contains(needle)) return true;
+        for (const Note &note : task.notes)
+            if (note.text.toLower().contains(needle)) return true;
+        return false;
     }
     }
     return false;

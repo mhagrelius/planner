@@ -230,6 +230,20 @@ private slots:
         run(s, "update Move house project=Work");
         QCOMPARE(json(s, "show Pack the books")["task"].toObject()["project"].toString(), "Work");
     }
+    void notesAreAddedAndShown() {
+        Store s = store();
+        run(s, "add Email Sam");
+        QJsonObject response = json(s, "note 'Email Sam' Rang the agent, waiting on a callback");
+        QCOMPARE(response["action"].toString(), "noted");
+        QCOMPARE(response["task"].toObject()["notes"].toArray().size(), 1);
+        QCOMPARE(response["task"].toObject()["notes"].toArray()[0].toObject()["text"].toString(), "Rang the agent, waiting on a callback");
+        run(s, "log 'Email Sam' They called back");
+        QCOMPARE(json(s, "show Email Sam")["task"].toObject()["notes"].toArray().size(), 2);
+        QVERIFY(!json(s, "list")["tasks"].toArray()[0].toObject().contains("notes"));
+        QCOMPARE(run(s, "note 'Email Sam'").error.kind, "missing-argument");
+        QCOMPARE(json(s, "search callback")["count"].toInt(), 1);
+        QCOMPARE(json(s, "list search: callback")["count"].toInt(), 1);
+    }
     void deletingAndProjects() {
         Store s = store();
         run(s, "add Move house");

@@ -135,7 +135,11 @@ pub fn search(store: &Store, query: &str, limit: usize) -> Vec<Hit> {
         // The description matches too, but never scores as well as the title:
         // a hit you cannot see in the row is a confusing one.
         let title_score = score(&task.content, query);
-        let body_score = score(&task.description, query).map(|score| score / 3);
+        let body_score = std::iter::once(task.description.as_str())
+            .chain(task.notes.iter().map(|note| note.text.as_str()))
+            .filter_map(|text| score(text, query))
+            .max()
+            .map(|score| score / 3);
         let Some(mut best) = title_score.or(body_score) else {
             continue;
         };

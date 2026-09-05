@@ -22,11 +22,13 @@ Rectangle {
         descriptionField.text = d.description || ""
         subtaskField.text = ""
         labelField.text = ""
+        noteField.text = ""
     }
     onDChanged: reset()
     Component.onCompleted: reset()
 
     function focusSubtask() { subtaskField.forceActiveFocus() }
+    function focusNote() { noteField.forceActiveFocus() }
 
     Column {
         anchors.fill: parent
@@ -214,6 +216,44 @@ Rectangle {
                             anchors.verticalCenter: parent.verticalCenter
                             Mono { visible: !subtaskField.text.length; text: "add a subtask"; px: 12; color: T.meta; anchors.verticalCenter: parent.verticalCenter }
                             onAccepted: { App.addSubtask(pane.taskId, text); text = "" }
+                            Keys.onEscapePressed: function(event) { text = ""; pane.forceActiveFocus(); event.accepted = true }
+                        }
+                    }
+                }
+                // Activity: dated notes, oldest first, and a field to add one.
+                Column {
+                    width: parent.width
+                    spacing: T.s(8)
+                    Rectangle { width: parent.width; height: T.line; color: T.surface0 }
+                    Mono { text: "activity"; px: 10; color: T.hintText; font.capitalization: Font.AllUppercase; font.letterSpacing: T.r(10 * 0.16); topPadding: T.s(6) }
+                    Repeater {
+                        model: pane.d.notes || []
+                        Item {
+                            id: noteRow
+                            required property var modelData
+                            width: parent.width
+                            height: noteText.implicitHeight + T.s(20)
+                            Mono { id: stamp; x: 0; y: T.s(2); text: noteRow.modelData.when; px: 11; color: T.meta }
+                            Sans { id: noteText; y: stamp.implicitHeight + T.s(4); width: parent.width - T.s(24); text: noteRow.modelData.text; px: 14; color: T.text2; wrapMode: Text.Wrap; lineHeight: 1.35 }
+                            // A wrong note is deleted from its row; nothing is edited in place.
+                            Icon { anchors.right: parent.right; y: T.s(2); name: "edit-clear"; px: 12; opacity: noteHover.containsMouse ? 0.9 : 0
+                                   MouseArea { anchors.fill: parent; anchors.margins: -T.s(6); cursorShape: Qt.PointingHandCursor; onClicked: App.removeNote(pane.taskId, noteRow.modelData.at) } }
+                            MouseArea { id: noteHover; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+                        }
+                    }
+                    Row {
+                        width: parent.width
+                        spacing: T.s(10)
+                        Keycap { key: "ctrl+shift+enter"; keyColor: T.meta; anchors.verticalCenter: parent.verticalCenter }
+                        TextInput {
+                            id: noteField
+                            width: parent.width - T.s(140)
+                            font.family: T.sans; font.pointSize: T.f(13); color: T.text
+                            selectionColor: T.activeFill; selectedTextColor: T.activeText
+                            activeFocusOnTab: true
+                            anchors.verticalCenter: parent.verticalCenter
+                            Mono { visible: !noteField.text.length; text: "add a note"; px: 12; color: T.meta; anchors.verticalCenter: parent.verticalCenter }
+                            onAccepted: { App.addNote(pane.taskId, text); text = "" }
                             Keys.onEscapePressed: function(event) { text = ""; pane.forceActiveFocus(); event.accepted = true }
                         }
                     }

@@ -121,6 +121,9 @@ public:
     QList<Task> removeTask(const TaskId &id, const QDateTime &now);
     void restoreTasks(const QList<Task> &tasks);
     std::optional<Completion> completeTask(const TaskId &id, const QDateTime &now, const QDate &today);
+    // A dated note on a task; false if the task is not there or the text is blank.
+    bool addNote(const TaskId &id, const QString &text, const QDateTime &now);
+    bool removeNote(const TaskId &id, const QDateTime &at, const QDateTime &now);
     void uncompleteTask(const TaskId &id, const QDateTime &now);
     std::pair<int, int> progress(const ProjectId &project) const;
 

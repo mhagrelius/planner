@@ -96,6 +96,14 @@ or as a board of columns (`Ctrl+Shift+B`), remembered per project. Sections
 are added with `Ctrl+Shift+N` and renamed or deleted from the palette;
 deleting one leaves its tasks in the project, and `Ctrl+Z` puts it back.
 
+### Notes on a task
+
+A task carries a description and, underneath it, **activity**: dated notes
+appended as things happen — "rang them, waiting on a callback". In the detail
+pane, `Ctrl+Shift+Enter` focuses the note field and `Enter` adds one, stamped
+with the current time; a wrong one is removed from its row. Notes are never
+edited in place. Quick find and `search:` match note text, below the title.
+
 ### Keyboard
 
 There are no modes. Every action has a key, and the keys are shown where they
@@ -117,6 +125,7 @@ apply: on the cursor row, in the header, in the status line.
 | `Ctrl+Z` | undo the last complete, delete or removal |
 | `Ctrl+↑↓` | move a task within its lane; `Ctrl+←→` between columns |
 | `Ctrl+Enter` | add a subtask, from the detail pane |
+| `Ctrl+Shift+Enter` | add a note, from the detail pane |
 | `Esc` | close the innermost thing; with nothing open, the window |
 | `Ctrl+Q` | quit |
 
@@ -130,6 +139,7 @@ planner agent list 'due: today | overdue'
 planner agent add Email Sam #Work @email p2 friday 9am
 planner agent complete 'Email Sam'
 planner agent update 'Email Sam' due=next friday priority=p1
+planner agent note 'Email Sam' Rang the agent, waiting on a callback
 ```
 
 It speaks the two languages the window already uses — a quick-add line to

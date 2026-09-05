@@ -297,6 +297,25 @@ private slots:
         QVERIFY(!Store::openAt(path, nullptr, instant(2026, 7, 31)).isDeleted(RecordKind::Task, inside));
         QVERIFY(Store::openAt(path, nullptr, instant(2025, 1, 2)).isDeleted(RecordKind::Task, inside));
     }
+    void notesAreDatedAppendOnlyAndSurviveTheFile() {
+        QTemporaryDir dir;
+        const QString path = dir.path() + "/planner.json";
+        Store store = Store::openAt(path);
+        const TaskId id = task(store, "Email Sam");
+        QVERIFY(!store.task(id)->toJson().contains("notes"));
+        QVERIFY(!store.addNote(id, "   ", instant(2026, 7, 31)));
+        QVERIFY(store.addNote(id, "Rang them, waiting on a callback", instant(2026, 7, 31)));
+        QVERIFY(store.addNote(id, "They called back", instant(2026, 8, 1)));
+        QCOMPARE(store.task(id)->updatedAt, instant(2026, 8, 1));
+        QVERIFY(!store.save());
+        const Store reopened = Store::openAt(path);
+        QCOMPARE(reopened.task(id)->notes.size(), 2);
+        QCOMPARE(reopened.task(id)->notes[0].text, "Rang them, waiting on a callback");
+        QCOMPARE(reopened.task(id)->notes[0].at, instant(2026, 7, 31));
+        QVERIFY(store.removeNote(id, instant(2026, 7, 31), instant(2026, 8, 2)));
+        QCOMPARE(store.task(id)->notes.size(), 1);
+        QVERIFY(!store.removeNote(id, instant(2026, 7, 31), instant(2026, 8, 2)));
+    }
     void recordsMergeAndDeleteFromAnotherMachine() {
         QTemporaryDir dir;
         Store store = Store::openAt(dir.path() + "/planner.json");

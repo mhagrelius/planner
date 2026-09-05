@@ -678,6 +678,25 @@ std::optional<Completion> Store::completeTask(const TaskId &id, const QDateTime 
     return outcome;
 }
 
+bool Store::addNote(const TaskId &id, const QString &text, const QDateTime &now) {
+    Task *task = taskMut(id);
+    const QString trimmed = text.trimmed();
+    if (!task || trimmed.isEmpty()) return false;
+    task->notes.append(Note{now.toUTC(), trimmed});
+    task->touch(now);
+    return true;
+}
+
+bool Store::removeNote(const TaskId &id, const QDateTime &at, const QDateTime &now) {
+    Task *task = taskMut(id);
+    if (!task) return false;
+    const auto before = task->notes.size();
+    task->notes.erase(std::remove_if(task->notes.begin(), task->notes.end(), [&](const Note &n) { return n.at == at; }), task->notes.end());
+    if (task->notes.size() == before) return false;
+    task->touch(now);
+    return true;
+}
+
 void Store::uncompleteTask(const TaskId &id, const QDateTime &now) {
     std::optional<TaskId> current = id;
     while (current) {

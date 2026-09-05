@@ -71,6 +71,11 @@ const QList<Verb> &verbs() {
           {"remove-label", false, "Take a label off it. The label itself stays."}},
          "`{task, applied}`. `applied` lists what actually changed, so a value that was already set is visibly a no-op rather than a silent one.",
          {"planner agent update 'Email Sam' due=next friday priority=p1", "planner agent update 'Email Sam' project=Work add-label=urgent"}},
+        {"note", {"log", "comment"}, "planner agent note <task> <text>", "Add a dated note to a task.", true,
+         {{"task", true, "The task to note on, as ONE argument. Quote it if it has spaces — the text follows."},
+          {"text", true, "What happened, as plain text. Stamped with the current time and appended; notes are never edited in place."}},
+         "`{task}` with its `notes`, newest last. Use this to record progress without changing the task itself.",
+         {"planner agent note 'Email Sam' Rang the agent, waiting on a callback"}},
         {"add-project", {"new-project"}, "planner agent add-project <name> [parent=<project>]", "Create a project.", true,
          {{"name", true, "What to call it."}, {"parent", false, "An existing project to nest it under."}},
          "`{project}`, with the colour it was given.", {"planner agent add-project Loft conversion parent=Home"}},
@@ -324,6 +329,9 @@ QJsonObject taskView(const Store &store, const Task &task, const QDate &today, b
         json.insert(QStringLiteral("subtask_count"), QJsonObject{{QStringLiteral("done"), done}, {QStringLiteral("total"), static_cast<int>(children.size())}});
     }
     if (detailed) {
+        QJsonArray notes;
+        for (const Note &note : task.notes) notes.append(QJsonObject{{QStringLiteral("at"), instantSerial(note.at)}, {QStringLiteral("text"), note.text}});
+        if (!notes.isEmpty()) json.insert(QStringLiteral("notes"), notes);
         QJsonArray reminders;
         for (const Reminder &reminder : task.reminders) reminders.append(reminderPhrase(reminder));
         if (!reminders.isEmpty()) json.insert(QStringLiteral("reminders"), reminders);
@@ -850,6 +858,15 @@ Result run(Store &store, const QStringList &args, const QDateTime &now, const QD
         if (reference.isEmpty()) return failWith(missing(QStringLiteral("update"), QStringLiteral("a task to change")));
         if (pairs.isEmpty()) return failWith(missing(QStringLiteral("update"), QStringLiteral("at least one `field=value`")));
         return update(store, reference, pairs, now, today);
+    }
+    if (*verb == u"note") {
+        if (rest.isEmpty()) return failWith(missing(QStringLiteral("note"), QStringLiteral("a task")));
+        const QString text = join(rest.mid(1));
+        if (text.isEmpty()) return failWith(missing(QStringLiteral("note"), QStringLiteral("some text")));
+        const auto id = resolveTask(store, rest[0], &error);
+        if (!id) return failWith(error);
+        store.addNote(*id, text, now);
+        return respond(QStringLiteral("noted"), {{QStringLiteral("task"), taskView(store, *store.task(*id), today, true)}}, true);
     }
     if (*verb == u"add-project") {
         const auto [words, pairs] = splitPairs(rest);

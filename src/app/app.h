@@ -165,6 +165,8 @@ public:
     Q_INVOKABLE void setPriority(const QString &id, const QString &token);
     Q_INVOKABLE void toggleLabel(const QString &id, const QString &name, bool on);
     Q_INVOKABLE void addSubtask(const QString &parent, const QString &line);
+    Q_INVOKABLE void addNote(const QString &id, const QString &text);
+    Q_INVOKABLE void removeNote(const QString &id, const QString &at);
     Q_INVOKABLE void openDeadlinePicker();
 
     // --- prompts: palette, quick add, quick find, text input, confirmation

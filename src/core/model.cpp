@@ -408,6 +408,17 @@ Reminder Reminder::fromJson(const QJsonObject &json) {
     return reminder;
 }
 
+QJsonObject Note::toJson() const {
+    return QJsonObject{{QStringLiteral("at"), instantSerial(at)}, {QStringLiteral("text"), text}};
+}
+
+Note Note::fromJson(const QJsonObject &json) {
+    Note note;
+    note.at = instantFromSerial(json.value(QStringLiteral("at")).toString()).value_or(epoch());
+    note.text = json.value(QStringLiteral("text")).toString();
+    return note;
+}
+
 Task Task::create(const ProjectId &project, const QString &content, const QDateTime &now) {
     Task task;
     task.id = newId();
@@ -467,6 +478,11 @@ QJsonObject Task::toJson() const {
         for (const Reminder &reminder : reminders) array.append(reminder.toJson());
         json.insert(QStringLiteral("reminders"), array);
     }
+    if (!notes.isEmpty()) {
+        QJsonArray array;
+        for (const Note &note : notes) array.append(note.toJson());
+        json.insert(QStringLiteral("notes"), array);
+    }
     if (pinned) json.insert(QStringLiteral("pinned"), true);
     if (checked) json.insert(QStringLiteral("checked"), true);
     if (completedAt) json.insert(QStringLiteral("completed_at"), instantSerial(*completedAt));
@@ -499,6 +515,7 @@ Task Task::fromJson(const QJsonObject &json) {
     task.priority = priorityFromSerial(json.value(QStringLiteral("priority")).toString()).value_or(Priority::P4);
     for (const QJsonValue &value : json.value(QStringLiteral("labels")).toArray()) task.labels.append(value.toString());
     for (const QJsonValue &value : json.value(QStringLiteral("reminders")).toArray()) task.reminders.append(Reminder::fromJson(value.toObject()));
+    for (const QJsonValue &value : json.value(QStringLiteral("notes")).toArray()) task.notes.append(Note::fromJson(value.toObject()));
     task.pinned = json.value(QStringLiteral("pinned")).toBool(false);
     task.checked = json.value(QStringLiteral("checked")).toBool(false);
     if (json.contains(QStringLiteral("completed_at"))) task.completedAt = instantFromSerial(json.value(QStringLiteral("completed_at")).toString());
@@ -511,7 +528,7 @@ Task Task::fromJson(const QJsonObject &json) {
 bool Task::operator==(const Task &other) const {
     return id == other.id && content == other.content && description == other.description && projectId == other.projectId
         && sectionId == other.sectionId && parentId == other.parentId && due == other.due && deadline == other.deadline
-        && priority == other.priority && labels == other.labels && reminders == other.reminders && pinned == other.pinned
+        && priority == other.priority && labels == other.labels && reminders == other.reminders && notes == other.notes && pinned == other.pinned
         && checked == other.checked && completedAt == other.completedAt && addedAt == other.addedAt
         && updatedAt == other.updatedAt && order == other.order;
 }

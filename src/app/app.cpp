@@ -767,6 +767,19 @@ void App::addSubtask(const QString &parentId, const QString &line) {
     recompute();
 }
 
+void App::addNote(const QString &id, const QString &text) {
+    bool added = false;
+    mutate([&](Store &store) { added = store.addNote(id, text, now()); });
+    if (added) recompute();
+}
+
+void App::removeNote(const QString &id, const QString &at) {
+    const auto when = instantFromSerial(at);
+    if (!when) return;
+    mutate([&](Store &store) { store.removeNote(id, *when, now()); });
+    recompute();
+}
+
 // --- prompts ----------------------------------------------------------------------
 
 void App::openPrompt(const QString &kind) {
@@ -1295,6 +1308,7 @@ void App::act(const QString &name) {
     else if (name == u"norail") toggleRail();
     else if (name == u"sync") showSyncStatus();
     else if (name == u"space") space();
+    else if (name.startsWith(u"note:")) { enter(); addNote(m_openTask, name.mid(5)); }
     else if (name.startsWith(u"cursor:")) cursorTo(name.mid(7).toInt());
 }
 
@@ -1525,6 +1539,14 @@ void App::buildDetail() {
             m_detail.insert(QStringLiteral("parentTitle"), parent->content);
         }
     }
+    // Activity, oldest first, each stamped the way a row reads a date.
+    QVariantList notes;
+    for (const Note &note : task->notes) {
+        const QDateTime local = note.at.toLocalTime();
+        const QString when = formatDate(local.date(), today) + QLatin1Char(' ') + local.toString(QStringLiteral("HH:mm"));
+        notes.append(QVariantMap{{QStringLiteral("at"), instantSerial(note.at)}, {QStringLiteral("when"), when}, {QStringLiteral("text"), note.text}});
+    }
+    m_detail.insert(QStringLiteral("notes"), notes);
     QStringList reminders;
     for (const Reminder &reminder : task->reminders)
         if (reminder.trigger.kind == Trigger::BeforeDue) reminders << duration(reminder.trigger.minutes) + QStringLiteral(" before");
@@ -1741,7 +1763,7 @@ void App::buildStatus() {
              << hint(QStringLiteral("ctrl+z"), QStringLiteral("undo"));
     } else if (!m_openTask.isEmpty() && m_detail.contains(QStringLiteral("title"))) {
         left = m_detail.value(QStringLiteral("title")).toString();
-        right = QStringLiteral("tab fields · ctrl+d schedule · ctrl+shift+p pin · del delete · esc back");
+        right = QStringLiteral("tab fields · ctrl+d schedule · ctrl+enter subtask · ctrl+shift+enter note · esc back");
     } else if (m_isProject && m_board) {
         left = QStringLiteral("#%1 · board").arg(view->title);
         right = QStringLiteral("←→ column · ctrl+←→ move task · ctrl+shift+b list");

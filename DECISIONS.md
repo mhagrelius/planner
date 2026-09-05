@@ -78,6 +78,11 @@ open, this is what happened and why.
   of Today, or deleted — the pane moves to the cursor row; where the view still
   shows the task it stays, struck through. Enter opens the cursor row, and the arrow
   keys then read each task in turn.
+- **Notes live inside the task record** as `notes: [{at, text}]`, omitted when
+  empty, so sync carries them with the task and the server keeps its five
+  kinds. The same field was added to `planner-core` on `main` so the GTK
+  client preserves notes it does not yet show. Append-only, deletable per row,
+  never edited in place; matched by quick find and `search:` below the title.
 - **Labels are edited in the detail pane**: click a chip to remove it, type into
   the `+` box and press Enter to add one (created if new). No label picker.
 - The date picker is **live**: each change writes to the task at once, so Escape
