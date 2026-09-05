@@ -1294,6 +1294,7 @@ void App::act(const QString &name) {
     else if (name == u"picker") { cursorTo(2); openDatePicker(); }
     else if (name == u"norail") toggleRail();
     else if (name == u"sync") showSyncStatus();
+    else if (name == u"space") space();
     else if (name.startsWith(u"cursor:")) cursorTo(name.mid(7).toInt());
 }
 
@@ -1464,7 +1465,10 @@ void App::buildContent() {
             if (m_rowIds.contains(id)) kept << id;
         m_selection = kept;
     }
-    if (!m_openTask.isEmpty() && !m_store.task(m_openTask)) m_openTask.clear();
+    // The pane shows a row of this list. A task completed out of a filter, or
+    // deleted, hands the pane to the cursor row; in a view that still shows
+    // it, it stays, struck through, so reopening it is one keystroke away.
+    if (!m_openTask.isEmpty() && !m_rowIds.contains(m_openTask)) m_openTask = m_rowIds.isEmpty() ? QString() : m_rowIds.at(m_cursor);
 
     if (total == 0) {
         m_empty.insert(QStringLiteral("title"), view->emptyTitle);
@@ -1758,8 +1762,10 @@ void App::buildStatus() {
         right = QStringLiteral("↑↓ move · ctrl+b rail · ctrl+k palette · esc close");
     }
     if (!m_toast.isEmpty()) {
+        // A toast is what just happened; for six seconds it outranks the hints.
         middle = m_toast.value(QStringLiteral("text")).toString();
         if (m_toast.value(QStringLiteral("undo")).toBool()) middle += QStringLiteral(" · ctrl+z undo");
+        right.clear();
     }
     // An active save failure outranks a sync problem: that is data not being
     // written right now.

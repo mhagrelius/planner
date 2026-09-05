@@ -74,7 +74,9 @@ open, this is what happened and why.
   filter is entered as its query first (validated live, an unparseable one will
   not save) and then its name.
 - **The detail pane follows the cursor** while it is open, and closes when the
-  view changes; Esc closes it too. Enter opens the cursor row, and the arrow
+  view changes; Esc closes it too. When its task leaves the list — completed out
+  of Today, or deleted — the pane moves to the cursor row; where the view still
+  shows the task it stays, struck through. Enter opens the cursor row, and the arrow
   keys then read each task in turn.
 - **Labels are edited in the detail pane**: click a chip to remove it, type into
   the `+` box and press Enter to add one (created if new). No label picker.
