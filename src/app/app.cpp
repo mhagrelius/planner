@@ -396,9 +396,11 @@ void App::go(const QString &viewId) {
     }
     if (target == m_viewId) return;
     m_viewId = target;
-    // A selection belongs to the list it was made in.
+    // A selection belongs to the list it was made in, and so does the open
+    // task: the pane would otherwise show something the new view has no row for.
     m_selecting = false;
     m_selection.clear();
+    m_openTask.clear();
     m_cursor = 0;
     m_boardColumn = 0;
     m_cursorWanted.clear();
@@ -432,6 +434,7 @@ void App::moveCursor(int delta) {
         m_cursor = std::clamp(m_cursor + delta, 0, static_cast<int>(m_rowIds.size()) - 1);
     }
     m_cursorWanted = m_rowIds.at(m_cursor);
+    followCursor();
     recompute();
 }
 
@@ -440,7 +443,15 @@ void App::cursorTo(int flat) {
     m_cursor = flat;
     m_cursorWanted = m_rowIds.at(flat);
     if (m_board) m_boardColumn = m_rowPlaces.at(flat).first;
+    followCursor();
     recompute();
+}
+
+// While the pane is open it shows the cursor row, so browsing with the arrow
+// keys reads each task in turn rather than leaving the first one on screen.
+void App::followCursor() {
+    if (m_openTask.isEmpty()) return;
+    if (const auto id = cursorId()) m_openTask = *id;
 }
 
 void App::moveColumn(int delta) {
@@ -459,6 +470,7 @@ void App::moveColumn(int delta) {
         m_cursor = best;
         m_cursorWanted = m_rowIds.at(best);
     }
+    followCursor();
     recompute();
 }
 

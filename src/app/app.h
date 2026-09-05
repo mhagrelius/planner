@@ -229,6 +229,7 @@ private:
     void waitForChanges();
     void finishWait(bool ok, bool changed, const QDateTime &cursor);
     void syncAfterEdit();
+    void followCursor();
     void reportSyncFailure(const QString &message);
     template <typename F> static void onMainThread(F functor);
 
