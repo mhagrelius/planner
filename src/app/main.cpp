@@ -28,7 +28,6 @@ int main(int argc, char *argv[]) {
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("planner"));
-    app.setApplicationDisplayName(QStringLiteral("Planner"));
     // No setDesktopFileName(): under the systemd scope the Omarchy menu
     // launches apps in, the host-portal registration fails and logs a warning.
     app.setWindowIcon(QIcon::fromTheme(QStringLiteral("planner")));
