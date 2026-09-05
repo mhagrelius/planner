@@ -49,6 +49,17 @@ impl Reminder {
     }
 }
 
+/// A dated line of activity on a task: "rang them, waiting on a callback".
+///
+/// Append-only in the interface, and stamped in UTC like every other instant.
+/// Notes ride inside the task record, so sync carries them with the task and
+/// the server never has to learn a sixth kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Note {
+    pub at: DateTime<Utc>,
+    pub text: String,
+}
+
 /// One thing to do.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Task {
@@ -80,6 +91,8 @@ pub struct Task {
     pub labels: Vec<LabelId>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reminders: Vec<Reminder>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Note>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub pinned: bool,
 
@@ -133,6 +146,7 @@ impl Task {
             priority: Priority::default(),
             labels: Vec::new(),
             reminders: Vec::new(),
+            notes: Vec::new(),
             pinned: false,
             checked: false,
             completed_at: None,
@@ -346,6 +360,19 @@ mod tests {
             json,
             r#"{"id":"t1","content":"Water the plants","project_id":"inbox","priority":"P4","added_at":"2026-07-01T12:00:00Z","updated_at":"2026-07-01T12:00:00Z","order":"i"}"#
         );
+    }
+
+    #[test]
+    fn notes_ride_inside_the_task_and_are_omitted_when_empty() {
+        let mut task = task();
+        assert!(!serde_json::to_string(&task).unwrap().contains("notes"));
+        task.notes.push(Note {
+            at: instant(2026, 7, 2),
+            text: "Rang them, waiting on a callback".into(),
+        });
+        let json = serde_json::to_string(&task).unwrap();
+        assert!(json.contains(r#""notes":[{"at":"2026-07-02T12:00:00Z","text":"Rang them, waiting on a callback"}]"#));
+        assert_eq!(serde_json::from_str::<Task>(&json).unwrap(), task);
     }
 
     #[test]

@@ -46,5 +46,5 @@ pub use schedule::Schedule;
 pub use search::{search, Hit};
 pub use similar::Candidate;
 pub use store::{LoadOutcome, SaveError, Store};
-pub use task::{Completion, Reminder, Task, Trigger};
+pub use task::{Completion, Note, Reminder, Task, Trigger};
 pub use tombstone::{RecordKind, Tombstone};
