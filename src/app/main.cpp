@@ -26,10 +26,24 @@ int main(int argc, char *argv[]) {
     // `planner agent …` is a command, not a launch. It goes to the running
     // window when there is one, so the store in that process's memory is the
     // one that answers; with nothing running, this process does the work.
+    // The verb may follow `--data <path>` (and `--today`), so a script can
+    // point a command at a scratch file; everything after the verb is its own.
     QStringList raw;
     for (int i = 1; i < argc; ++i) raw << QString::fromLocal8Bit(argv[i]);
-    const bool isAgent = !raw.isEmpty() && raw.first() == QStringLiteral("agent");
-    const bool isSync = !raw.isEmpty() && raw.first() == QStringLiteral("sync");
+    QString cliData;
+    int verbAt = -1;
+    for (int i = 0; i < raw.size(); ++i) {
+        if (raw.at(i) == QStringLiteral("--data") && i + 1 < raw.size()) { cliData = raw.at(i + 1); ++i; continue; }
+        if (raw.at(i).startsWith(QStringLiteral("--data="))) { cliData = raw.at(i).mid(7); continue; }
+        if (raw.at(i) == QStringLiteral("--today") && i + 1 < raw.size()) { ++i; continue; }
+        if (raw.at(i).startsWith(QStringLiteral("--"))) continue;
+        verbAt = i;
+        break;
+    }
+    const bool isAgent = verbAt >= 0 && raw.at(verbAt) == QStringLiteral("agent");
+    const bool isSync = verbAt >= 0 && raw.at(verbAt) == QStringLiteral("sync");
+    if (isAgent || isSync) raw = raw.mid(verbAt);
+    if (!cliData.isEmpty() && !cliData.endsWith(QStringLiteral(".json"))) cliData += QStringLiteral("/planner.json");
 
     QGuiApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("planner"));
@@ -62,12 +76,15 @@ int main(int argc, char *argv[]) {
     if (isAgent) {
         // Everything after `agent` belongs to the verb, `--flags` included.
         const QStringList agentArgs = raw.mid(1);
-        if (const auto reply = SingleInstance::forward(agentArgs)) {
-            QTextStream(stdout) << reply->output << "\n";
-            return reply->ok ? 0 : 1;
+        // A scratch file is its own world: no forwarding to the window.
+        if (cliData.isEmpty()) {
+            if (const auto reply = SingleInstance::forward(agentArgs)) {
+                QTextStream(stdout) << reply->output << "\n";
+                return reply->ok ? 0 : 1;
+            }
         }
         planner::LoadOutcome outcome;
-        planner::Store store = planner::Store::open(&outcome);
+        planner::Store store = cliData.isEmpty() ? planner::Store::open(&outcome) : planner::Store::openAt(cliData, &outcome);
         const planner::agent::Result result = planner::agent::run(store, agentArgs, QDateTime::currentDateTimeUtc(), QDate::currentDate());
         if (result.changedStore) {
             if (const auto error = store.save()) {
@@ -81,9 +98,11 @@ int main(int argc, char *argv[]) {
     // `planner sync [now|status]`: the running window answers; with none, one
     // pass runs here against the file and the result is printed.
     if (isSync) {
-        if (const auto reply = SingleInstance::forward(raw)) {
-            QTextStream(stdout) << reply->output << "\n";
-            return reply->ok ? 0 : 1;
+        if (cliData.isEmpty()) {
+            if (const auto reply = SingleInstance::forward(raw)) {
+                QTextStream(stdout) << reply->output << "\n";
+                return reply->ok ? 0 : 1;
+            }
         }
         const planner::Config config = planner::Config::load();
         const auto target = config.syncTarget();
@@ -94,7 +113,7 @@ int main(int argc, char *argv[]) {
             return 0;
         }
         planner::LoadOutcome outcome;
-        planner::Store store = planner::Store::open(&outcome);
+        planner::Store store = cliData.isEmpty() ? planner::Store::open(&outcome) : planner::Store::openAt(cliData, &outcome);
         json.insert(QStringLiteral("server"), target->first);
         json.insert(QStringLiteral("file"), store.path());
         if (raw.value(1) == QStringLiteral("now")) {
