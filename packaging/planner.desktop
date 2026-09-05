@@ -1,9 +1,11 @@
 [Desktop Entry]
 Type=Application
 Name=Planner
-Comment=A keyboard-driven task planner for Omarchy
+GenericName=Task Planner
+Comment=A keyboard-driven task planner
+Keywords=task;todo;planner;checklist;reminder;
 Exec=planner
 Icon=planner
 Terminal=false
-Categories=Utility;
+Categories=Office;ProjectManagement;Utility;
 StartupWMClass=planner

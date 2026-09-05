@@ -65,10 +65,27 @@ QtObject {
     readonly property color tealBorder: Palette.tealBorder
     readonly property color tooltipBg: Palette.tooltipBg
 
+    // The design's text ramp between text2 and muted: overlay2 for secondary
+    // mono meta, subtext0 for hints and uppercase labels. Surface-ramp colours
+    // are for fills, borders and separators only — never for copy.
+    function mix(a, b, t) { return Qt.rgba(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1) }
+    readonly property color meta: mix(text2, muted, 0.5)
+    readonly property color hintText: mix(text2, muted, 0.25)
+    // Fills: surface0 for keycaps, chips and hairlines; surface1 for the
+    // selected rail row, popover borders and the unset checkbox ring.
+    readonly property color surface0: selection
+    readonly property color surface1: borderStrong
+    // Text on a saturated fill (a keycap, a checked box).
+    function onFill(c) { return (0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b) > 0.5 ? Qt.rgba(0.07, 0.07, 0.11, 1) : Qt.rgba(1, 1, 1, 0.94) }
+    // A hex string for the icon provider.
+    function hex(c) { return Qt.rgba(c.r, c.g, c.b, 1).toString() }
+
     // Resolve a palette role name from model data. Reading `text` first ties
     // the binding to the palette's change signal so rows re-tint live.
     function role(name) {
         var tie = Palette.text
+        if (name === "meta") return root.meta
+        if (name === "hintText") return root.hintText
         return Palette.role(name)
     }
 

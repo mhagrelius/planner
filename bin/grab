@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+# Grab every surface headless at design scale into docs/screens (or $1),
+# from the demo store pinned to the design's date. OMARCHY_THEME_DIR previews
+# another theme without switching the desktop.
+set -eu
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+OUT="${1:-$ROOT/docs/screens}"
+mkdir -p "$OUT"
+grab() {
+  name="$1"; shift
+  QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORM=offscreen OMARCHY_TEXT_SCALE="${OMARCHY_TEXT_SCALE:-1}" PLANNER_SOCKET_SUFFIX=-grab \
+    timeout 20 "$ROOT/build/planner" --demo --today 2026-09-05 "$@" --grab "$OUT/$name.png" 2>&1 | grep -v propertyCache || true
+}
+grab a-today --screen today
+grab b-detail --screen today --act cursor:5,detail
+grab c-palette --screen project:Work --act palette
+grab d1-add --screen today --act add
+grab d2-find --screen today --act find
+grab e-sections --screen project:Work
+grab f-board --screen project:Work --act board
+grab g-select --screen today --act select
+grab h1-empty --screen pinned
+grab h2-picker --screen today --act picker
+ls "$OUT"

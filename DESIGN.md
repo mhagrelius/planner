@@ -1,5 +1,10 @@
 # Planner — design for review
 
+> This is the design of the GTK/Rust app on `main`, kept for the record. The
+> `quattro` branch rebuilt the front end for Omarchy in Qt Quick and C++; see
+> **Quattro** at the end, `design/HANDOFF.md` for the surfaces, and
+> `DECISIONS.md` for what changed.
+
 A GTK 4 / libadwaita task planner for GNOME, in Rust. Local-first, single user.
 Built the way Stickies is built: a GTK-free `model/` half that `cargo test`
 exercises with no display, an imperative `ui/` half of `glib::wrapper!`
@@ -239,3 +244,15 @@ and `overview` lists them), reordering, reminders, saved filters, and undo.
 - Board columns are sections only. Grouping by priority or label is a small
   follow-on once the query layer exists, not a v1 commitment.
 - No notes-as-tasks. A task is a task; the description field carries prose.
+
+## Quattro
+
+The Omarchy rebuild keeps every decision above that is about the *model* —
+the store as the one writer, every view as a query, `every` against `every!`,
+the refusal to guess a date — and replaces the toolkit and the shape of the
+window. The design (`design/HANDOFF.md`) is a keyboard-driven Hyprland client
+rather than a header-bar app: a rail with numbered views, a header that shows
+the view's query, keycap hints on the cursor row, a status line that becomes
+the bulk-action bar during a selection, and a command palette in place of
+every menu. The Rust model was ported to `src/core/` in C++ rather than bridged
+(see `DECISIONS.md`); its tests came across as ctest suites.

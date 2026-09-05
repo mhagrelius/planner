@@ -1,18 +1,22 @@
-# Maintainer: matthew
+# Maintainer: Matthew Hagrelius
 pkgname=planner
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="A keyboard-driven task planner for Omarchy"
 arch=('x86_64')
-url="https://github.com/matthew/planner"
-license=('MIT')
-depends=('hicolor-icon-theme' 'qt6-base' 'qt6-declarative' 'xdg-desktop-portal')
+url="https://github.com/mhagrelius/planner"
+license=('GPL-3.0-or-later')
+depends=('hicolor-icon-theme' 'qt6-base' 'qt6-declarative' 'qt6-svg' 'xdg-desktop-portal')
 makedepends=('cmake' 'ninja')
 source=()
 
 build() {
-  cmake -S "$startdir" -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+  cmake -S "$startdir/.." -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
   cmake --build build
+}
+
+check() {
+  cd build && ctest --output-on-failure
 }
 
 package() {
