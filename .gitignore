@@ -3,3 +3,4 @@
 /docs/screens/*.png
 *.zip
 /target
+compile_commands.json

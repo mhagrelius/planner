@@ -1,0 +1,4 @@
+# The build is GCC; clangd can't parse some GCC-only flags and aborts before
+# loading the compile_commands paths, which phantom-errors every Qt include.
+CompileFlags:
+  Remove: [-mno-direct-extern-access]
