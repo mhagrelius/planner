@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Planner
 import "../components"
 
@@ -20,13 +21,25 @@ Item {
         function onChanged() { if (prompt.visible && field.text !== App.promptQuery) { field.text = App.promptQuery; field.cursorPosition = field.text.length } }
     }
 
-    Rectangle { anchors.fill: parent; color: Qt.rgba(T.window.r * 0.55, T.window.g * 0.55, T.window.b * 0.55, 0.72); MouseArea { anchors.fill: parent; onClicked: App.closePrompt() } }
+    Rectangle { anchors.fill: parent; color: T.scrim; MouseArea { anchors.fill: parent; onClicked: App.closePrompt() } }
+
+    // The handoff's popover shadow: 0 24px 60px rgba(0,0,0,.55). MultiEffect
+    // draws the box, so this must sit between the scrim and the box.
+    MultiEffect {
+        source: box
+        anchors.fill: box
+        shadowEnabled: true
+        shadowBlur: 1.0
+        blurMax: T.s(60)
+        shadowColor: Qt.rgba(0, 0, 0, 0.55)
+        shadowVerticalOffset: T.r(24)
+    }
 
     Rectangle {
         id: box
         x: Math.round((parent.width - width) / 2)
         y: T.s(64)
-        width: Math.min(T.s(kind === "palette" ? 660 : 610), parent.width - T.s(40))
+        width: Math.min(T.s(kind === "palette" ? 660 : kind === "menu" ? 460 : 610), parent.width - T.s(40))
         height: column.implicitHeight
         color: T.window
         radius: T.s(12)
@@ -39,10 +52,10 @@ Item {
             // The prompt row: sigil, the query, and the count at the right.
             Item {
                 width: parent.width
-                height: ((prompt.kind === "confirm" || prompt.kind === "status") ? 0 : T.s(48)) + (App.promptTitle.length && prompt.kind !== "status" ? T.s(28) : 0)
-                Mono { visible: App.promptTitle.length > 0 && prompt.kind !== "status"; x: T.s(16); y: T.s(12); text: App.promptTitle; px: 11; color: T.hintText; width: parent.width - T.s(32); wrapMode: Text.Wrap }
+                height: ((prompt.kind === "confirm" || prompt.kind === "status" || prompt.kind === "menu") ? 0 : T.s(48)) + (App.promptTitle.length && prompt.kind !== "status" && prompt.kind !== "confirm" ? T.s(28) : 0)
+                Mono { visible: App.promptTitle.length > 0 && prompt.kind !== "status" && prompt.kind !== "confirm"; x: T.s(16); y: prompt.kind === "menu" ? T.s(6) : T.s(12); text: App.promptTitle; px: 11; color: T.hintText; width: parent.width - T.s(32); wrapMode: Text.Wrap }
                 Row {
-                    visible: prompt.kind !== "confirm" && prompt.kind !== "status"
+                    visible: prompt.kind !== "confirm" && prompt.kind !== "status" && prompt.kind !== "menu"
                     anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
                     anchors.leftMargin: T.s(16); anchors.rightMargin: T.s(16); anchors.bottomMargin: T.s(14)
                     spacing: T.s(10)
@@ -85,7 +98,7 @@ Item {
                     Mono { id: count; text: App.promptCount; px: 11; color: T.hintText; anchors.verticalCenter: parent.verticalCenter }
                 }
             }
-            Rectangle { width: parent.width; height: T.line; color: T.surface0; visible: prompt.kind !== "confirm" && prompt.kind !== "status" }
+            Rectangle { width: parent.width; height: T.line; color: T.surface0; visible: prompt.kind !== "confirm" && prompt.kind !== "status" && prompt.kind !== "menu" }
 
             // Sync status: what syncing has and has not done, as label and value rows.
             Column {
@@ -136,7 +149,7 @@ Item {
 
             // Results, grouped under uppercase headings.
             Column {
-                visible: prompt.kind === "palette" || prompt.kind === "find"
+                visible: prompt.kind === "palette" || prompt.kind === "find" || prompt.kind === "menu"
                 width: parent.width
                 topPadding: T.s(6); bottomPadding: T.s(8)
                 Repeater {
@@ -167,8 +180,8 @@ Item {
                 Row {
                     anchors.left: parent.left; anchors.leftMargin: T.s(16); anchors.verticalCenter: parent.verticalCenter
                     spacing: T.s(16)
-                    Keycap { visible: prompt.kind === "palette" || prompt.kind === "find"; key: "↑↓"; text: "move" }
-                    Keycap { visible: prompt.kind !== "status"; key: "enter"; text: prompt.kind === "add" ? "add" : prompt.kind === "find" ? "open" : prompt.kind === "palette" ? "run" : prompt.kind === "confirm" ? "delete" : "save" }
+                    Keycap { visible: prompt.kind === "palette" || prompt.kind === "find" || prompt.kind === "menu"; key: "↑↓"; text: "move" }
+                    Keycap { visible: prompt.kind !== "status"; key: "enter"; text: prompt.kind === "add" ? "add" : prompt.kind === "find" ? "open" : prompt.kind === "confirm" ? "delete" : prompt.kind === "palette" || prompt.kind === "menu" ? "run" : "save" }
                     Keycap { visible: prompt.kind === "add"; key: "ctrl k"; text: "keep adding"; fill: App.keepAdding ? T.positive : T.surface0; keyColor: App.keepAdding ? T.onFill(T.positive) : T.text }
                     Keycap { key: "esc"; text: prompt.kind === "confirm" ? "keep it" : prompt.kind === "status" ? "close" : "dismiss" }
                 }
@@ -176,7 +189,8 @@ Item {
                     anchors.right: parent.right; anchors.rightMargin: T.s(16); anchors.verticalCenter: parent.verticalCenter
                     px: 11; color: T.hintText
                     text: prompt.kind === "add" ? (App.addPreview.destination || "") : prompt.kind === "find" ? "tasks, projects and labels at once"
-                        : prompt.kind === "palette" ? "every view is a query — filters live in the same list" : prompt.kind === "status" ? "planner sync status, from a shell" : ""
+                        : prompt.kind === "palette" ? "every view is a query — filters live in the same list" : prompt.kind === "status" ? "planner sync status, from a shell"
+                        : prompt.kind === "menu" ? "the row’s actions" : ""
                 }
             }
         }

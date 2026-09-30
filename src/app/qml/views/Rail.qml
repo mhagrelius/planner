@@ -87,7 +87,15 @@ Rectangle {
                 radius: T.s(8)
                 color: item.selected ? T.surface1 : hover.containsMouse ? T.hover : "transparent"
                 Behavior on color { ColorAnimation { duration: 120 } }
-                MouseArea { id: hover; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: App.go(item.id) }
+                MouseArea {
+                    id: hover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    cursorShape: Qt.PointingHandCursor
+                    // The menu reaches the row it was opened on, so no need to visit it first.
+                    onClicked: function (mouse) { if (mouse.button === Qt.RightButton) App.openRowMenu(item.id); else App.go(item.id) }
+                }
                 Row {
                     anchors.fill: parent
                     anchors.leftMargin: T.s(12) + item.depth * T.s(16)

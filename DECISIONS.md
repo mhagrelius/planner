@@ -64,6 +64,17 @@ open, this is what happened and why.
 - **Deleting a project asks first** with a confirmation prompt (Enter deletes,
   Esc keeps it), then offers undo; a section deletion goes straight to a toast
   with undo, since its tasks stay.
+- **A rail row has a menu** (2026-09-17, owner's call): right-click a project,
+  subproject or filter row, or press `Menu` (`Shift+F10`) for the view you are
+  in, and the row's own actions open — `New Subproject…`, `Rename Project…`,
+  `Delete Project…` for a project; `Edit Filter…`, `Delete Filter` for a filter.
+  Built-in views and the Inbox have none, so right-clicking them does nothing.
+  It is the palette shell rather than a popup at the pointer: one surface, one
+  look, and the design's line that the palette replaces menus holds. The menu
+  carries the row's id in its payload, so it reaches a project you are not
+  looking at; the palette's copies of the same actions still act on the view in
+  front of you. `Del` deletes the cursor row as before, and the current project
+  — after the same confirmation — when the list has nothing in it.
 - **Toasts live in the status line** (the middle text, `· ctrl+z undo` appended
   when the action can be undone), for six seconds. Complete and delete report with
   undo; priority and reschedule report a plain count.

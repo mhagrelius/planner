@@ -600,7 +600,84 @@ void App::deleteIds(const QList<TaskId> &ids) {
 
 void App::deleteKey() {
     const QList<TaskId> ids = targets();
-    if (!ids.isEmpty()) deleteIds(ids);
+    if (!ids.isEmpty()) { deleteIds(ids); return; }
+    // Nothing listed to delete, so the row in the rail is the target: Del on an
+    // empty project asks after it. A project with tasks keeps deleting tasks.
+    if (m_selecting) return;
+    if (const auto view = currentView(); view && view->projectId()) confirmDeleteProject(*view->projectId());
+}
+
+// What a rail row is called, with the sigil the rest of the app uses; empty for
+// a row that has no actions.
+QString App::rowTitle(const QString &viewId) const {
+    if (viewId.startsWith(QStringLiteral("project:"))) {
+        const Project *project = m_store.project(viewId.section(QLatin1Char(':'), 1));
+        return project ? QStringLiteral("#%1").arg(project->name) : QString();
+    }
+    if (viewId.startsWith(QStringLiteral("filter:"))) {
+        const SavedFilter *filter = m_store.filter(viewId.section(QLatin1Char(':'), 1));
+        return filter ? filter->name : QString();
+    }
+    return {};
+}
+
+// The actions one rail row offers, with its id in the payload so they reach a
+// project you are not looking at. Built-in views have none.
+QVariantList App::rowActions(const QString &viewId) const {
+    QVariantList items;
+    const auto add = [&](const QString &action, const QString &title, const QString &icon, const QString &chip, const QVariantMap &payload) {
+        QVariantMap item = payload;
+        item.insert(QStringLiteral("kind"), QStringLiteral("action"));
+        item.insert(QStringLiteral("id"), action);
+        item.insert(QStringLiteral("title"), title);
+        item.insert(QStringLiteral("icon"), icon);
+        item.insert(QStringLiteral("key"), QString());
+        item.insert(QStringLiteral("chip"), chip);
+        items.append(item);
+    };
+    const QString named = rowTitle(viewId);
+    if (named.isEmpty()) return items;
+    const QString target = viewId.section(QLatin1Char(':'), 1);
+    if (viewId.startsWith(QStringLiteral("project:"))) {
+        const QVariantMap scope{{QStringLiteral("project"), target}};
+        add(QStringLiteral("new-subproject"), QStringLiteral("New Subproject…"), QStringLiteral("folder-new"), QStringLiteral("in ") + named, scope);
+        add(QStringLiteral("rename-project"), QStringLiteral("Rename Project…"), QStringLiteral("document-edit"), named, scope);
+        add(QStringLiteral("delete-project"), QStringLiteral("Delete Project…"), QStringLiteral("user-trash"), named, scope);
+    } else {
+        const QVariantMap scope{{QStringLiteral("filter"), target}};
+        add(QStringLiteral("edit-filter"), QStringLiteral("Edit Filter…"), QStringLiteral("edit-find"), named, scope);
+        add(QStringLiteral("delete-filter"), QStringLiteral("Delete Filter"), QStringLiteral("user-trash"), named, scope);
+    }
+    return items;
+}
+
+void App::confirmDeleteProject(const ProjectId &id) {
+    // Deleting a project asks first, because it takes subprojects and their tasks.
+    const Project *project = m_store.project(id);
+    if (!project) return;
+    const int tasks = static_cast<int>(m_store.progress(id).second);
+    m_prompt = QStringLiteral("confirm");
+    m_inputAction = QStringLiteral("confirm-delete-project");
+    m_inputPayload = {{QStringLiteral("project"), id}};
+    m_promptTitle = QStringLiteral("Delete #%1%2? Subprojects go with it.").arg(project->name,
+        tasks ? QStringLiteral(" and its %1").arg(countOf(tasks)) : QString());
+    m_promptQuery.clear();
+    recompute();
+}
+
+void App::openRowMenu(const QString &viewId) {
+    const QVariantList items = rowActions(viewId);
+    if (items.isEmpty()) return;
+    m_prompt = QStringLiteral("menu");
+    m_menuView = viewId;
+    m_promptTitle = rowTitle(viewId);
+    m_promptPlaceholder.clear();
+    m_promptQuery.clear();
+    m_promptIndex = 0;
+    m_promptError.clear();
+    m_inputAction.clear();
+    m_inputPayload.clear();
+    recompute();
 }
 
 void App::moveTaskVertical(int delta) {
@@ -804,6 +881,7 @@ void App::closePrompt() {
     m_promptError.clear();
     m_keepAdding = false;
     m_promptRows.clear();
+    m_menuView.clear();
     recompute();
 }
 
@@ -909,7 +987,8 @@ void App::finishInput() {
         mutate([&](Store &store) { removed = store.removeProject(project, now()); });
         if (removed) {
             m_undo = Undo{QStringLiteral("project"), {}, {}, std::nullopt, removed};
-            toast(QStringLiteral("Deleted the project and %1").arg(countOf(removed->tasks.size())), true);
+            toast(QStringLiteral("Deleted the project%1").arg(removed->tasks.size()
+                ? QStringLiteral(" and %1").arg(countOf(removed->tasks.size())) : QString()), true);
         }
         closePrompt();
         if (m_viewId == QStringLiteral("project:") + project) go(QStringLiteral("today"));
@@ -987,8 +1066,11 @@ void App::runPaletteItem(const QVariantMap &item) {
 
     const QString action = id;
     const auto view = currentView();
-    const std::optional<ProjectId> project = view ? view->projectId() : std::nullopt;
-    const std::optional<FilterId> filter = view ? view->filterId() : std::nullopt;
+    // A row menu carries its own target; the palette acts on the view you are in.
+    std::optional<ProjectId> project = view ? view->projectId() : std::nullopt;
+    std::optional<FilterId> filter = view ? view->filterId() : std::nullopt;
+    if (const QString scoped = item.value(QStringLiteral("project")).toString(); !scoped.isEmpty()) project = scoped;
+    if (const QString scoped = item.value(QStringLiteral("filter")).toString(); !scoped.isEmpty()) filter = scoped;
     if (action == u"new-task") { openPrompt(QStringLiteral("add")); return; }
     if (action == u"find") { openPrompt(QStringLiteral("find")); return; }
     if (action == u"select") { closePrompt(); selectAll(); return; }
@@ -996,7 +1078,7 @@ void App::runPaletteItem(const QVariantMap &item) {
     if (action == u"toggle-rail") { closePrompt(); toggleRail(); return; }
     if (action == u"pin") { closePrompt(); pinCursor(); return; }
     if (action == u"complete") { closePrompt(); completeIds(targets()); return; }
-    if (action == u"delete-task") { closePrompt(); deleteKey(); return; }
+    if (action == u"delete-task") { const QList<TaskId> ids = targets(); closePrompt(); deleteIds(ids); return; }
     if (action == u"date") { closePrompt(); openDatePicker(); return; }
     if (action == u"deadline") { closePrompt(); openDeadlinePicker(); return; }
     if (action == u"undo") { closePrompt(); undo(); return; }
@@ -1024,17 +1106,7 @@ void App::runPaletteItem(const QVariantMap &item) {
     if (action == u"new-project") { beginInput(action, QStringLiteral("new project"), QStringLiteral("Loft conversion"), {}, {}); return; }
     if (action == u"new-subproject" && project) { beginInput(QStringLiteral("new-project"), QStringLiteral("new project under #%1").arg(m_store.project(*project)->name), QStringLiteral("Admin"), {}, {{QStringLiteral("parent"), *project}}); return; }
     if (action == u"rename-project" && project) { beginInput(action, QStringLiteral("rename the project"), {}, m_store.project(*project)->name, {{QStringLiteral("project"), *project}}); return; }
-    if (action == u"delete-project" && project) {
-        // Deleting a project asks first, because it takes subprojects and their tasks.
-        const int tasks = static_cast<int>(m_store.progress(*project).second);
-        m_prompt = QStringLiteral("confirm");
-        m_inputAction = QStringLiteral("confirm-delete-project");
-        m_inputPayload = {{QStringLiteral("project"), *project}};
-        m_promptTitle = QStringLiteral("Delete #%1 and its %2? Subprojects go with it.").arg(m_store.project(*project)->name, countOf(tasks));
-        m_promptQuery.clear();
-        recompute();
-        return;
-    }
+    if (action == u"delete-project" && project) { confirmDeleteProject(*project); return; }
     if (action == u"new-filter") { beginInput(QStringLiteral("filter-query"), QStringLiteral("save a filter — a query, then a name"), QStringLiteral("p1 & due before: next week"), {}, {}); return; }
     if (action == u"edit-filter" && filter) {
         const SavedFilter *saved = m_store.filter(*filter);
@@ -1044,7 +1116,7 @@ void App::runPaletteItem(const QVariantMap &item) {
     if (action == u"delete-filter" && filter) {
         mutate([&](Store &store) { store.removeFilter(*filter, now()); });
         closePrompt();
-        go(QStringLiteral("today"));
+        if (m_viewId == QStringLiteral("filter:") + *filter) go(QStringLiteral("today"));
         return;
     }
     if (action == u"show-completed" && project) {
@@ -1300,6 +1372,17 @@ void App::toast(const QString &text, bool undoable) {
 void App::act(const QString &name) {
     if (name == u"detail") enter();
     else if (name == u"palette") { openPrompt(QStringLiteral("palette")); setPromptQuery(QStringLiteral("sec")); }
+    else if (name == u"menu") openRowMenu(m_viewId);
+    // A row by project name, so a grab can open a menu for a project the window
+    // is not looking at.
+    else if (name.startsWith(u"menu:")) {
+        const QString row = name.mid(5);
+        const Project *named = m_store.projectByName(row);
+        openRowMenu(named ? QStringLiteral("project:") + named->id : row);
+    }
+    else if (name.startsWith(u"to:")) promptTo(name.mid(3).toInt());
+    else if (name == u"run-prompt") runPrompt();
+    else if (name == u"del") deleteKey();
     else if (name == u"add") { openPrompt(QStringLiteral("add")); setPromptQuery(QStringLiteral("Email Sam about the lease #Work @email p1 friday 9am !30m")); }
     else if (name == u"find") { openPrompt(QStringLiteral("find")); setPromptQuery(QStringLiteral("the")); }
     else if (name == u"select") { selectAll(); m_selection = m_rowIds.mid(0, 2); m_cursor = std::min(2, static_cast<int>(m_rowIds.size()) - 1); m_cursorWanted = m_rowIds.value(m_cursor); recompute(); }
@@ -1609,6 +1692,12 @@ void App::buildPrompt() {
         return;
     }
 
+    if (m_prompt == u"menu") {
+        m_promptResults = rowActions(m_menuView);
+        m_promptIndex = m_promptResults.isEmpty() ? 0 : std::min(m_promptIndex, static_cast<int>(m_promptResults.size()) - 1);
+        return;
+    }
+
     // The palette: actions, views and tasks in one list.
     struct Entry { QString group; QVariantMap item; int score; };
     QList<Entry> entries;
@@ -1643,13 +1732,18 @@ void App::buildPrompt() {
         }
         action(QStringLiteral("toggle-style"), m_board ? QStringLiteral("Show as List") : QStringLiteral("Show as Board"), m_board ? QStringLiteral("view-list") : QStringLiteral("view-grid"), QStringLiteral("ctrl+shift+b"), {});
         action(QStringLiteral("show-completed"), project->showCompleted ? QStringLiteral("Hide Completed Tasks") : QStringLiteral("Show Completed Tasks"), QStringLiteral("object-select"), {}, in);
-        action(QStringLiteral("new-subproject"), QStringLiteral("New Subproject…"), QStringLiteral("folder-new"), {}, in);
-        action(QStringLiteral("rename-project"), QStringLiteral("Rename Project…"), QStringLiteral("document-edit"), {}, QLatin1Char('#') + project->name);
-        action(QStringLiteral("delete-project"), QStringLiteral("Delete Project…"), QStringLiteral("user-trash"), {}, QLatin1Char('#') + project->name);
+        for (const QVariant &entry : rowActions(QStringLiteral("project:") + project->id)) {
+            const QVariantMap item = entry.toMap();
+            if (const auto score = searchScore(item.value(QStringLiteral("title")).toString(), query))
+                entries.append({QStringLiteral("actions"), item, *score});
+        }
     }
     if (filterId) {
-        action(QStringLiteral("edit-filter"), QStringLiteral("Edit Filter…"), QStringLiteral("edit-find"), {}, view->title);
-        action(QStringLiteral("delete-filter"), QStringLiteral("Delete Filter"), QStringLiteral("user-trash"), {}, view->title);
+        for (const QVariant &entry : rowActions(QStringLiteral("filter:") + *filterId)) {
+            const QVariantMap item = entry.toMap();
+            if (const auto score = searchScore(item.value(QStringLiteral("title")).toString(), query))
+                entries.append({QStringLiteral("actions"), item, *score});
+        }
     }
     if (!m_rowIds.isEmpty()) {
         action(QStringLiteral("select"), QStringLiteral("Select Tasks"), QStringLiteral("selection-mode"), QStringLiteral("ctrl+a"), {});

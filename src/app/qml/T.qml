@@ -64,6 +64,8 @@ QtObject {
     readonly property color dragBg: Palette.dragBg
     readonly property color tealBorder: Palette.tealBorder
     readonly property color tooltipBg: Palette.tooltipBg
+    // The modal veil, theme-independent per the handoff (alpha .72 baked in).
+    readonly property color scrim: Palette.scrim
 
     // The design's text ramp between text2 and muted: overlay2 for secondary
     // mono meta, subtext0 for hints and uppercase labels. Surface-ramp colours

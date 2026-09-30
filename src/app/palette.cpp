@@ -223,6 +223,9 @@ void Palette::rebuild() {
     r["invalidBand"] = mix(dbg, red, 0.04);
     r["dragBg"] = mix(dbg, blue, 0.12);
     r["tealBorder"] = mix(dbg, bcyan, 0.25);
+    // The modal veil is deliberately theme-independent, per the handoff:
+    // rgba(17,17,27,.72) over a surface faded to .35.
+    r["scrim"] = QColor(17, 17, 27, 184);
 
     m_roles = r;
 }

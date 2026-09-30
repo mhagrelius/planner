@@ -22,7 +22,7 @@
     X(positive) X(positiveDim) X(negative) X(warning) X(caution) X(cautionAlt) \
     X(teal) X(blueGray) X(violet) X(pink) X(info) X(blue) \
     X(positiveBg) X(infoBg) X(warningBg) X(cautionBg) X(errorBg) X(neutralBg) \
-    X(destructiveHover) X(invalidBand) X(dragBg) X(tealBorder) X(tooltipBg)
+    X(destructiveHover) X(invalidBand) X(dragBg) X(tealBorder) X(tooltipBg) X(scrim)
 
 class Palette : public QObject {
     Q_OBJECT

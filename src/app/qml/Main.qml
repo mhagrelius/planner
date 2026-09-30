@@ -47,6 +47,7 @@ Window {
             if (promptOpen) {
                 if (event.key === Qt.Key_Up) { App.movePrompt(-1); event.accepted = true }
                 else if (event.key === Qt.Key_Down) { App.movePrompt(1); event.accepted = true }
+                else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { if (App.prompt === "menu") { App.runPrompt(); event.accepted = true } }
                 else if (ctrl && event.key === Qt.Key_K) { if (App.prompt === "add") App.submitKeepAdding(); else App.closePrompt(); event.accepted = true }
                 else if (ctrl && event.key === Qt.Key_N && App.prompt !== "add") { App.openPrompt("add"); event.accepted = true }
                 else if (ctrl && event.key === Qt.Key_F && App.prompt !== "find") { App.openPrompt("find"); event.accepted = true }
@@ -81,11 +82,15 @@ Window {
             else if (event.key === Qt.Key_Space) { App.space(); event.accepted = true }
             else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { App.enter(); event.accepted = true }
             else if (event.key === Qt.Key_Delete) { App.deleteKey(); event.accepted = true }
+            else if (event.key === Qt.Key_Menu || (shift && event.key === Qt.Key_F10)) { App.openRowMenu(App.viewId); event.accepted = true }
             else if (event.key === Qt.Key_Tab && App.openTask.length) { detail.forceActiveFocus(); event.accepted = true }
             else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_5) { App.goToKey(event.key - Qt.Key_0); event.accepted = true }
         }
 
         Row {
+            // Per the handoff: the surface behind a prompt is dimmed to .35
+            // under the scrim, so the prompt sits on a fade, not a black slab.
+            opacity: App.prompt.length > 0 ? 0.35 : 1
             anchors.fill: parent
             Rail { id: rail; visible: App.railVisible; height: parent.height }
             Item {

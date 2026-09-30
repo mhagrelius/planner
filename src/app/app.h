@@ -147,7 +147,7 @@ public:
     Q_INVOKABLE void openTaskId(const QString &id);
     Q_INVOKABLE void closeDetail();
     Q_INVOKABLE void pinCursor();
-    Q_INVOKABLE void deleteKey();       // the cursor row, or the selection
+    Q_INVOKABLE void deleteKey();       // the cursor row, the selection, or an empty project
     Q_INVOKABLE void moveTaskVertical(int delta);
     Q_INVOKABLE void moveTaskColumn(int delta);
 
@@ -177,6 +177,9 @@ public:
     Q_INVOKABLE void promptTo(int index);
     Q_INVOKABLE void runPrompt();
     Q_INVOKABLE void submitKeepAdding();
+    // The actions for one rail row, by view id ("project:...", "filter:...").
+    // Right-click in the rail, or the Menu key for the view you are in.
+    Q_INVOKABLE void openRowMenu(const QString &viewId);
 
     // --- project structure
     Q_INVOKABLE void toggleStyle();
@@ -216,6 +219,9 @@ private:
     std::optional<planner::View> currentView() const;
     std::optional<planner::TaskId> cursorId() const;
     QList<planner::TaskId> targets() const;   // the selection, or the cursor row
+    QVariantList rowActions(const QString &viewId) const;
+    QString rowTitle(const QString &viewId) const;
+    void confirmDeleteProject(const planner::ProjectId &id);
     void toast(const QString &text, bool undoable);
     void completeIds(const QList<planner::TaskId> &ids);
     void deleteIds(const QList<planner::TaskId> &ids);
@@ -279,6 +285,7 @@ private:
     bool m_keepAdding = false;
     QString m_inputAction;
     QVariantMap m_inputPayload;
+    QString m_menuView;                 // the rail row an open menu belongs to
     struct Picker {
         bool open = false;
         QString mode;                   // due, deadline, bulk

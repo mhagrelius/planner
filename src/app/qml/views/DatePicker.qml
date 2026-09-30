@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Planner
 import "../components"
 
@@ -21,6 +22,16 @@ Item {
     Component.onCompleted: if (visible) reset()
 
     MouseArea { anchors.fill: parent; onClicked: App.closePicker() }
+    // The handoff's popover shadow: 0 24px 60px rgba(0,0,0,.55).
+    MultiEffect {
+        source: picker
+        anchors.fill: picker
+        shadowEnabled: true
+        shadowBlur: 1.0
+        blurMax: T.s(60)
+        shadowColor: Qt.rgba(0, 0, 0, 0.55)
+        shadowVerticalOffset: T.r(24)
+    }
     Rectangle {
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)

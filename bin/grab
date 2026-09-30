@@ -14,6 +14,8 @@ grab() {
 grab a-today --screen today
 grab b-detail --screen today --act cursor:5,detail
 grab c-palette --screen project:Work --act palette
+grab c2-menu --screen project:Work --act menu
+grab c3-delete --screen project:Home --act del
 grab d1-add --screen today --act add
 grab d2-find --screen today --act find
 grab e-sections --screen project:Work

@@ -15,7 +15,10 @@ skill — read it before changing theming, scaling or packaging.
 - `bin/grab [dir]` renders every surface headless at `OMARCHY_TEXT_SCALE=1` from the
   demo store pinned to 2026-09-05 (`docs/screens/` by default). One surface:
   `--screen <view> --act <state> --grab <png>`; states are `detail`, `palette`,
-  `add`, `find`, `select`, `board`, `picker`, `norail`, `cursor:N`.
+  `menu` (the current view's row menu; `menu:<project>` opens one by name, for a
+  project you are not looking at), `add`, `find`, `select`, `board`, `picker`,
+  `norail`, `cursor:N`, `to:N` (highlight a prompt row), `run-prompt` (run it),
+  `del` (the delete key).
 - `./build/planner --demo` seeds the design's tasks into `~/.local/share/planner-demo`
   (wiped each launch). `--data <path>` isolates a store; `--today YYYY-MM-DD` pins
   the clock. Scratch runs (`--demo`, `--data`, `--grab`) do not take the

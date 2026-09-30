@@ -116,7 +116,8 @@ apply: on the cursor row, in the header, in the status line.
 | `Enter` | open it in the detail pane |
 | `Ctrl+D` | date picker for the cursor row (or the selection) |
 | `Ctrl+Shift+P` | pin |
-| `Del` | delete, with undo |
+| `Del` | delete the cursor row, with undo; an empty project you are looking at, after asking |
+| `Menu` (`Shift+F10`) | the current view's actions — same list as right-clicking its rail row |
 | `Ctrl+N` | new task; `Ctrl+K` inside the prompt keeps adding |
 | `Ctrl+F` | quick find across tasks, projects and labels |
 | `Ctrl+K` | command palette: actions, views and tasks in one list |
